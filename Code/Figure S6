@@ -1,0 +1,511 @@
+library(openxlsx)
+library(car)
+library(lme4)
+library(lmerTest)  # 用于p值计算
+library(emmeans)   # 用于事后检验
+library(multcomp)  # 用于多重比较
+library(ggplot2)
+library(glmmTMB)
+library(tibble)
+library(dplyr)
+library(stringr)
+
+mytheme = theme_classic() + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11, angle = 35, vjust = 1, hjust = 1),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        legend.position = "none") 
+
+###### 对于每盆中先加入以及后引入植物总体生物量的影响
+pot_cwm_corr_data = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "pot_mass", rowNames = F, colNames = T)
+colnames(pot_cwm_corr_data)
+#pot_cwm_corr_data = pot_cwm_corr_data %>% left_join(pot_infor)
+
+pot_cwm_corr_data$yr = as.factor(pot_cwm_corr_data$Time)
+pot_cwm_corr_data$Origin2 = ifelse(pot_cwm_corr_data$Origin2 == "Exotic", "Alien", pot_cwm_corr_data$Origin2)
+pot_cwm_corr_data$Origin2 = as.factor(pot_cwm_corr_data$Origin2)
+pot_cwm_corr_data$SR2 = as.factor(pot_cwm_corr_data$SR2)
+pot_cwm_corr_data$pot = as.factor(pot_cwm_corr_data$pot)
+pot_cwm_corr_data$add_sp_list = as.factor(pot_cwm_corr_data$add_sp_list)
+pot_cwm_corr_data$res_sp_list = as.factor(pot_cwm_corr_data$res_sp_list)
+
+pot_cwm_corr_data = subset(pot_cwm_corr_data, Origin2 != "ck")
+
+#species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+#pot_cwm_corr_data[species_list] <- lapply(pot_cwm_corr_data[species_list], as.factor)
+#str(pot_cwm_corr_data)
+
+# X2_F_hgt
+mod_pot_X2_F_hgt = lmer(X2_F_hgt ~ yr * Origin2 * SR2 + 
+                          (1|Origin2:SR2:pot) + 
+                          (1|add_sp_list) + 
+                          (1|res_sp_list), data = pot_cwm_corr_data)
+#anova(mod_pot_X2_F_hgt, type = 3)
+car::Anova(mod_pot_X2_F_hgt)
+summary(mod_pot_X2_F_hgt)
+ranova(mod_pot_X2_F_hgt)
+
+time_xOx_SR_effect = emmeans(mod_pot_X2_F_hgt, specs = pairwise ~ yr*Origin2*SR2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_X2_F_hgt_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "SR2", "Origin2"), measurevar = "X2_F_hgt", na.rm = T)
+pot_X2_F_hgt_data1$Group = paste0(pot_X2_F_hgt_data1$Origin2, "|", pot_X2_F_hgt_data1$SR2)
+
+pot_X2_F_hgt_data1 = pot_X2_F_hgt_data1 %>% left_join(emm1_multi[,c("yr", "SR2", "Origin2", ".group", "group_new")])
+
+ggplot(pot_X2_F_hgt_data1, aes(x = yr, y = X2_F_hgt, group = Group, fill = Group, shape = Group)) + 
+  geom_errorbar(aes(ymin = X2_F_hgt-ci, ymax = X2_F_hgt+ci, color = Group), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Group), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) + 
+  geom_text(aes(y = ifelse(X2_F_hgt >= 0, X2_F_hgt + ci, X2_F_hgt + ci),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_X2_F_hgt_data1$X2_F_hgt >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_F_hgt_data1$yr),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(0, 8),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(0, 8, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck|0" = "#70319D", 
+                                "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                                "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck|0" = "#70319D", 
+                               "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                               "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_shape_manual(values = c("ck|0" = 21, 
+                                "Native|1" = 22, "Native|2" = 23, "Native|4" = 24, 
+                                "Alien|1" = 22, "Alien|2" = 23, "Alien|4" = 24)) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        strip.background = element_rect(color = "black", size = 0.5, fill = "white"),
+        strip.text = element_text(colour='black', size=11), 
+        #plot.margin = margin(1,1,1,2,unit="cm"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of plant height\nin the introduced community", 
+       tag = "A") -> pp1; pp1
+
+
+################################################################################
+# X2_F_LA
+################################################################################
+colnames(pot_cwm_corr_data)
+mod_pot_X2_F_LA = lmer(X2_F_LA ~ yr * Origin2 * SR2 + 
+                         (1|Origin2:SR2:pot) + 
+                         (1|add_sp_list) + 
+                         (1|res_sp_list), data = pot_cwm_corr_data)
+
+car::Anova(mod_pot_X2_F_LA)
+summary(mod_pot_X2_F_LA)
+ranova(mod_pot_X2_F_LA)
+
+time_xOx_SR_effect = emmeans(mod_pot_X2_F_LA, specs = pairwise ~ yr*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_X2_F_LA_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "Origin2"), measurevar = "X2_F_LA", na.rm = T)
+
+pot_X2_F_LA_data1 = pot_X2_F_LA_data1 %>% left_join(emm1_multi[,c("yr", "Origin2", ".group", "group_new")])
+
+ggplot(pot_X2_F_LA_data1, aes(x = yr, y = X2_F_LA, group = Origin2, fill = Origin2, shape = Origin2)) + 
+  geom_errorbar(aes(ymin = X2_F_LA-ci, ymax = X2_F_LA+ci, color= Origin2), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Origin2), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5), shape = 21) + 
+  geom_text(aes(y = ifelse(X2_F_LA >= 0, X2_F_LA + ci, X2_F_LA + ci),  
+                label = group_new, color = Origin2), color = "black",
+            vjust = ifelse(pot_X2_F_LA_data1$X2_F_LA >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_F_LA_data1$yr),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(0, 8),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(0, 8, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        strip.background = element_rect(color = "black", size = 0.5, fill = "white"),
+        strip.text = element_text(colour='black', size=11), 
+        #plot.margin = margin(1,1,1,2,unit="cm"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of leaf area\nin the introduced community", 
+       tag = "B") -> pp2; pp2
+
+
+################################################################################
+# X2_F_SLA
+################################################################################
+colnames(pot_cwm_corr_data)
+mod_pot_X2_F_SLA = lmer(X2_F_SLA ~ yr * Origin2 * SR2 + 
+                          (1|Origin2:SR2:pot) + 
+                          (1|add_sp_list) + 
+                          (1|res_sp_list)
+                        , data = pot_cwm_corr_data)
+
+car::Anova(mod_pot_X2_F_SLA)
+summary(mod_pot_X2_F_SLA)
+ranova(mod_pot_X2_F_SLA)
+
+time_xOx_SR_effect = emmeans(mod_pot_X2_F_SLA, specs = pairwise ~ yr*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_X2_F_SLA_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "Origin2"), measurevar = "X2_F_SLA", na.rm = T)
+pot_X2_F_SLA_data1 = pot_X2_F_SLA_data1 %>% left_join(emm1_multi[,c("yr", "Origin2", ".group", "group_new")])
+
+ggplot(pot_X2_F_SLA_data1, aes(x = yr, y = X2_F_SLA, group = Origin2, fill = Origin2, color = Origin2, shape = Origin2)) + 
+  geom_errorbar(aes(ymin = X2_F_SLA-ci, ymax = X2_F_SLA+ci), size = 0.8,
+                width = 0, position = position_dodge(width = 0.5)) + 
+  geom_line(position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5), pch = 21, color = "black") +
+  geom_text(aes(y = ifelse(X2_F_SLA >= 0, X2_F_SLA + ci, X2_F_SLA + ci),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_X2_F_SLA_data1$X2_F_SLA >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_F_SLA_data1$yr),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("5", "17", "29", "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  theme_classic() +
+  scale_color_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  #scale_shape_manual(values = c("1" = 22, "2" = 23, "4" = 24)) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of specific leaf area\nin the introduced community",
+       tag = "C") -> pp3; pp3
+
+################################################################################
+# X2_F_LDMC
+################################################################################
+colnames(pot_cwm_corr_data)
+mod_pot_X2_F_LDMC = lmer(X2_F_LDMC ~ yr * Origin2 * SR2 + 
+                           (1|Origin2:SR2:pot) + 
+                           (1|add_sp_list) + 
+                           (1|res_sp_list), data = pot_cwm_corr_data)
+
+car::Anova(mod_pot_X2_F_LDMC)
+shapiro.test(residuals(mod_pot_X2_F_LDMC))
+summary(mod_pot_X2_F_LDMC)
+ranova(mod_pot_X2_F_LDMC)
+
+time_xOx_SR_effect = emmeans(mod_pot_X2_F_LDMC, specs = pairwise ~ yr*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_X2_F_LDMC_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "Origin2"), measurevar = "X2_F_LDMC", na.rm = T)
+#pot_X2_F_LDMC_data1$Group = paste0(pot_X2_F_LDMC_data1$Origin2, "|", pot_X2_F_LDMC_data1$SR2)
+
+pot_X2_F_LDMC_data1 = pot_X2_F_LDMC_data1 %>% left_join(emm1_multi[,c("yr", "Origin2", ".group", "group_new")])
+# 
+ggplot(pot_X2_F_LDMC_data1, aes(x = yr, y = X2_F_LDMC, group = Origin2, fill = Origin2, shape = Origin2)) + 
+  geom_errorbar(aes(ymin = X2_F_LDMC-ci, ymax = X2_F_LDMC+ci, color = Origin2), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Origin2), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5), pch = 21, color = "black") + 
+  geom_text(aes(y = ifelse(X2_F_LDMC >= 0, X2_F_LDMC + ci, X2_F_LDMC + ci),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_X2_F_LDMC_data1$X2_F_LDMC >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_F_LDMC_data1$yr),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(0, 8),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(0, 8, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        strip.background = element_rect(color = "black", size = 0.5, fill = "white"),
+        strip.text = element_text(colour='black', size=11), 
+        #plot.margin = margin(1,1,1,2,unit="cm"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of leaf dry matter content\nin the introduced community", 
+       tag = "D") -> pp4; pp4
+
+################################################################################
+# X2_F_germT
+################################################################################
+colnames(pot_cwm_corr_data)
+mod_pot_X2_F_germT = lmer(X2_F_germT ~ yr * Origin2 * SR2 + 
+                            (1|Origin2:SR2:pot) + 
+                            (1|add_sp_list) + 
+                            (1|res_sp_list), data = pot_cwm_corr_data)
+#anova(mod_pot_X2_F_germT)
+car::Anova(mod_pot_X2_F_germT)
+summary(mod_pot_X2_F_germT)
+ranova(mod_pot_X2_F_germT)
+
+time_xOx_SR_effect = emmeans(mod_pot_X2_F_germT, specs = pairwise ~ yr*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_X2_F_germT_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "Origin2"), measurevar = "X2_F_germT", na.rm = T)
+
+pot_X2_F_germT_data1 = pot_X2_F_germT_data1 %>% left_join(emm1_multi[,c("yr", "Origin2", ".group", "group_new")])
+
+ggplot(pot_X2_F_germT_data1, aes(x = yr, y = X2_F_germT, group = Origin2, shape = Origin2, color = Origin2, fill = Origin2)) + 
+  geom_errorbar(aes(ymin = X2_F_germT-ci, ymax = X2_F_germT+ci), size = 0.8,
+                width = 0, position = position_dodge(width = 0.5)) + 
+  geom_line(position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5), pch = 21, color = "black") +
+  geom_text(aes(y = ifelse(X2_F_germT >= 0, X2_F_germT + ci, X2_F_germT + ci),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_X2_F_germT_data1$X2_F_germT >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_F_germT_data1$yr),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("5", "17", "29", "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  theme_classic() +
+  scale_color_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  #scale_shape_manual(values = c("1" = 22, "2" = 23, "4" = 24)) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of first germination data\nin the introduced community",
+       tag = "E") -> pp5; pp5
+
+
+# X2_F_flowT
+colnames(pot_cwm_corr_data)
+mod_pot_X2_F_flowT = lmer(X2_F_flowT ~ yr * Origin2 * SR2 + 
+                            (1|Origin2:SR2:pot) + 
+                            (1|add_sp_list) + 
+                            (1|res_sp_list), data = pot_cwm_corr_data)
+
+car::Anova(mod_pot_X2_F_flowT)
+summary(mod_pot_X2_F_flowT)
+ranova(mod_pot_X2_F_flowT)
+
+time_xOx_SR_effect = emmeans(mod_pot_X2_F_flowT, specs = pairwise ~ yr*Origin2*SR2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_X2_F_flowT_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "SR2", "Origin2"), measurevar = "X2_F_flowT", na.rm = T)
+pot_X2_F_flowT_data1$Group = paste0(pot_X2_F_flowT_data1$Origin2, "|", pot_X2_F_flowT_data1$SR2)
+
+pot_X2_F_flowT_data1 = pot_X2_F_flowT_data1 %>% left_join(emm1_multi[,c("yr", "SR2", "Origin2", ".group" , "group_new")])
+
+# 
+ggplot(pot_X2_F_flowT_data1, aes(x = yr, y = X2_F_flowT, group = Group, fill = Group, shape = Group)) + 
+  geom_errorbar(aes(ymin = X2_F_flowT-ci, ymax = X2_F_flowT+ci, color = Group), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Group), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) + 
+  geom_text(aes(y = ifelse(X2_F_flowT >= 0, X2_F_flowT + ci, X2_F_flowT + ci),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_X2_F_flowT_data1$X2_F_flowT >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_F_flowT_data1$yr),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(0, 8),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(0, 8, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck|0" = "#70319D", 
+                                "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                                "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck|0" = "#70319D", 
+                               "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                               "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_shape_manual(values = c("ck|0" = 21, 
+                                "Native|1" = 22, "Native|2" = 23, "Native|4" = 24, 
+                                "Alien|1" = 22, "Alien|2" = 23, "Alien|4" = 24)) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        strip.background = element_rect(color = "black", size = 0.5, fill = "white"),
+        strip.text = element_text(colour='black', size=11), 
+        #plot.margin = margin(1,1,1,2,unit="cm"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of first flowering data\nin the introduced community", 
+       tag = "F") -> pp6; pp6
+
+# X2_F_seeds
+colnames(pot_cwm_corr_data)
+mod_pot_X2_F_seeds = lmer(X2_F_seeds ~ yr * Origin2 * SR2 + 
+                            (1|Origin2:SR2:pot) + 
+                            (1|add_sp_list) + 
+                            (1|res_sp_list), data = pot_cwm_corr_data)
+
+car::Anova(mod_pot_X2_F_seeds)
+summary(mod_pot_X2_F_seeds)
+ranova(mod_pot_X2_F_seeds)
+
+
+time_xOx_SR_effect = emmeans(mod_pot_X2_F_seeds, specs = pairwise ~ yr*Origin2*SR2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_X2_F_seeds_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "SR2", "Origin2"), measurevar = "X2_F_seeds", na.rm = T)
+pot_X2_F_seeds_data1$Group = paste0(pot_X2_F_seeds_data1$Origin2, "|", pot_X2_F_seeds_data1$SR2)
+
+pot_X2_F_seeds_data1 = pot_X2_F_seeds_data1 %>% left_join(emm1_multi[,c("yr", "SR2", "Origin2", ".group", "group_new")])
+
+# 
+ggplot(pot_X2_F_seeds_data1, aes(x = yr, y = X2_F_seeds, group = Group, fill = Group, shape = Group)) + 
+  geom_errorbar(aes(ymin = X2_F_seeds-ci, ymax = X2_F_seeds+ci, color = Group), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Group), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) + 
+  geom_text(aes(y = ifelse(X2_F_seeds >= 0, X2_F_seeds + ci, X2_F_seeds + ci),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_X2_F_seeds_data1$X2_F_seeds >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_F_seeds_data1$yr),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(0, 8),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(0, 8, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck|0" = "#70319D", 
+                                "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                                "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck|0" = "#70319D", 
+                               "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                               "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_shape_manual(values = c("ck|0" = 21, 
+                                "Native|1" = 22, "Native|2" = 23, "Native|4" = 24, 
+                                "Alien|1" = 22, "Alien|2" = 23, "Alien|4" = 24)) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        strip.background = element_rect(color = "black", size = 0.5, fill = "white"),
+        strip.text = element_text(colour='black', size=11), 
+        #plot.margin = margin(1,1,1,2,unit="cm"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of number of seed production\nin the introduced community", 
+       tag = "G") -> pp7; pp7
+
+(pp1/pp4/pp7)|(pp2/pp5/pp7)|(pp3/pp6/pp7) -> Figure_S6
+
+#ggsave("Figure_S6.pdf", plot = Figure_S6, width = 14.5, height = 11, units = "in", dpi = 300)
+
