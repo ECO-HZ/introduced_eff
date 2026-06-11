@@ -1,0 +1,2257 @@
+pot_mass_all_data = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "pot_mass", rowNames = F, colNames = T)
+
+pot_mass_all_data$Time = as.factor(pot_mass_all_data$Time)
+pot_mass_all_data$Origin2 = ifelse(pot_mass_all_data$Origin2 == "Exotic", "Alien", pot_mass_all_data$Origin2)
+pot_mass_all_data$Origin2 = as.factor(pot_mass_all_data$Origin2)
+pot_mass_all_data$SR2 = as.factor(pot_mass_all_data$SR2)
+pot_mass_all_data$pot = as.factor(pot_mass_all_data$pot)
+pot_mass_all_data$add_sp_list = as.factor(pot_mass_all_data$add_sp_list)
+pot_mass_all_data$res_sp_list = as.factor(pot_mass_all_data$res_sp_list)
+
+pot_mass_all_data$Origin_num = ifelse(pot_mass_all_data$Origin2 == "Alien", 1, 0)
+
+# add +1 for CWM_F_Disease CWM_F_Pest
+pot_mass_all_data$CWM_F_Disease = sqrt(pot_mass_all_data$CWM_F_Disease+1)
+pot_mass_all_data$CWM_F_Pest = sqrt(pot_mass_all_data$CWM_F_Pest+1)
+
+# removed ck
+pot_mass_ck_removed = subset(pot_mass_all_data, Origin2 != "ck")
+# ck dataset
+pot_mass_all_data_ck = subset(pot_mass_all_data, Origin2 == "ck")
+
+unique(pot_mass_all_data$Origin2)
+head(pot_mass_all_data)
+
+################################################################################
+colnames(pot_mass_ck_removed)
+
+treatment_list <- c("Origin_num", "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+# input data without missing values
+effect_effect_data = NULL
+
+for (i in 1:nrow(pot_mass_ck_removed)) {
+  # 获取每一列数据信息(年份、丰富度、群落类型)
+  sel_pot = pot_mass_ck_removed[i, ]
+  
+  # 获取对应对照处理数据
+  sel_ck_data = subset(pot_mass_all_data_ck, Time == sel_pot$Time & Res_comm == sel_pot$Res_comm)
+  
+  # 计算效应值
+  sel_pot$X2_effect = sel_pot$SQRTX2mass 
+  sel_pot$R_effect = mean(log(sel_pot$SQRTRmass / sel_ck_data$SQRTRmass), na.rm = TRUE)
+  sel_pot$T_effect = mean(log(sel_pot$sqrtmass / sel_ck_data$sqrtmass), na.rm = TRUE)
+  sel_pot$CWM_F_Disease_effect = mean(log(sel_pot$CWM_F_Disease / sel_ck_data$CWM_F_Disease), na.rm = TRUE)
+  sel_pot$CWM_F_Pest_effect = mean(log(sel_pot$CWM_F_Pest / sel_ck_data$CWM_F_Pest), na.rm = TRUE)
+  sel_pot$E_BG_effect = mean(log(sel_pot$E_BG / sel_ck_data$E_BG), na.rm = TRUE)
+  sel_pot$E_NAG_effect = mean(log(sel_pot$E_NAG / sel_ck_data$E_NAG), na.rm = TRUE)
+  sel_pot$E_AP_effect = mean(log(sel_pot$E_AP / sel_ck_data$E_AP), na.rm = TRUE)
+  sel_pot$soilN_effect = mean(log(sel_pot$soilN / sel_ck_data$soilN), na.rm = TRUE)
+  
+  effect_effect_data = rbind(effect_effect_data, sel_pot)
+}
+
+
+################################################################################
+############# Aboveground biomass of introduced species community ############## 
+################################################################################
+
+mod_pot_mass_X2 = lmer(SQRTX2mass ~ Time * Origin2 * SR2 + 
+                         (1|Origin2:SR2:pot) + 
+                         (1|res_sp_list) + 
+                         (1|add_sp_list), data = pot_mass_ck_removed)
+shapiro.test(residuals(mod_pot_mass_X2))
+hist(residuals(mod_pot_mass_X2))
+car::Anova(mod_pot_mass_X2)
+summary(mod_pot_mass_X2)
+ranova(mod_pot_mass_X2)
+
+time_xOx_SR_effect = emmeans(mod_pot_mass_X2, specs = pairwise ~ Time*Origin2*SR2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+library(stringr)
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+#pot_X2_mass_data1 = Rmisc::summarySE(pot_mass_ck_removed, groupvars = c("Time", "SR2", "Origin2"), measurevar = "SQRTX2mass")
+pot_X2_mass_data1 = emm1_multi
+pot_X2_mass_data1$Group = paste0(pot_X2_mass_data1$Origin2, "|", pot_X2_mass_data1$SR2)
+pot_X2_mass_data1$Time = factor(pot_X2_mass_data1$Time, levels = c("2022","2023", "2024", "2025"))
+#pot_X2_mass_data1 = pot_X2_mass_data1 %>% left_join(emm1_multi[,c("Time", "SR2", "Origin2", ".group", "group_new")])
+# 
+ggplot(pot_X2_mass_data1, aes(x = Time, y = emmean, group = Group, color = Group, fill = Group, shape = Group)) + 
+  geom_errorbar(aes(ymin = emmean - 1.96*SE, ymax = emmean + 1.96*SE, color = Group), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Group), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) + 
+  geom_text(aes(y = ifelse(emmean >= 0, emmean + 1.96*SE, emmean + 1.96*SE),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_X2_mass_data1$emmean >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_mass_data1$Time),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(0, 8),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(0, 8, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck|0" = "#70319D", 
+                                "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                                "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck|0" = "#70319D", 
+                               "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                               "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_shape_manual(values = c("ck|0" = 21, 
+                                "Native|1" = 22, "Native|2" = 23, "Native|4" = 24, 
+                                "Alien|1" = 22, "Alien|2" = 23, "Alien|4" = 24)) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        strip.background = element_rect(color = "black", size = 0.5, fill = "white"),
+        strip.text = element_text(colour='black', size=11), 
+        #plot.margin = margin(1,1,1,2,unit="cm"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", y = "Introduced community biomass (g, sqrt)", tag = "A") -> Figure_S4A; Figure_S4A
+
+
+################################################################################
+mod_pot_mass_X2 = lmer(X2_effect ~ Time * Origin2 * SR2 + 
+                         (1|Origin2:SR2:pot) + 
+                         (1|res_sp_list) + 
+                         (1|add_sp_list), data = effect_effect_data)
+hist(residuals(mod_pot_mass_X2))
+car::Anova(mod_pot_mass_X2)
+summary(mod_pot_mass_X2)
+ranova(mod_pot_mass_X2)
+
+X2_effect_mean = as.tibble(emmeans(mod_pot_mass_X2, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(X2_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+X2_effect_mean_add <- X2_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "**",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+################# effect of identity of second adding species ################## 
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+SQRTX2mass_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("X2_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + 
+                         (1|res_sp_list)"))
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data, 
+                #family = gaussian(),  
+                control = lmerControl(optimizer = "bobyqa"))
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  SQRTX2mass_sp_eff_dat <- rbind(SQRTX2mass_sp_eff_dat, species_group)
+}
+
+# adding signal
+SQRTX2mass_sp_eff_dat$Significance <- case_when(
+  SQRTX2mass_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  SQRTX2mass_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  SQRTX2mass_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #SQRTX2mass_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_X2_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data[,c(i, "X2_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "X2_effect")
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_X2_effect_mean = rbind(sp_X2_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_X2_effect_mean = SQRTX2mass_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_X2_effect_mean$Presence = ifelse(sp_X2_effect_mean$Group == 1, "Presence", "Absence")
+sp_X2_effect_mean$Presence = factor(sp_X2_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_X2_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+#sp_X2_effect_mean$x_position = rep(1:10, each = 2)
+sp_X2_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+#sp_X2_effect_mean$x_position = rep(c(3.25,4.25,5.5,6.5,7.75,8.75,10,11,12.25,13.25), each = 2)
+sp_X2_effect_mean$Group = as.character(sp_X2_effect_mean$Group)
+#sp_X2_effect_mean$species = factor(sp_X2_effect_mean$species, levels = unique(sp_X2_effect_mean$species))
+
+sp_X2_effect_mean_add = bind_rows(X2_effect_mean_add, sp_X2_effect_mean)
+colnames(sp_X2_effect_mean_add)[2] <- "X2_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_X2_effect_data <- sp_X2_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(X2_effect), 
+         is_higher = X2_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+#labels_infor = c("1" = "Alien", "2" = "Native", "3.25" = "BF", "4.25" = "BB", "5.5" = "PA", "6.5" = "SN",
+#                 "7.75" = "SOC", "8.75" = "ST", "10" = "CAR", "11" = "AA", "12.25" = "DA", "13.25" = "CAL")
+
+ggplot(sp_X2_effect_mean_add, aes(x = x_position, y = X2_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_X2_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = X2_effect -1.96*SE, ymax = X2_effect + 1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_X2_effect_mean_add, species == "add_group"), size = 3.5, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_X2_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = X2_effect -1.96*SE, ymax = X2_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_X2_effect_mean_add, Presence == "Presence"), size = 3.5, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_X2_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = X2_effect -1.96*SE, ymax = X2_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_X2_effect_mean_add, Presence == "Absence"), size = 3.5, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(0, 15),expand = expansion(mult = c(0, 0)),breaks = seq(0, 15, by = 5)) +
+  scale_x_continuous(breaks = unique(sp_X2_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_X2_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = X2_effect + 1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.25, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_X2_effect_data, species == "add_group"), 
+            aes(x = x_position+0.5, y = X2_effect + 1.96*SE, label = Significance), 
+            vjust = -0.25, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  #geom_segment(aes(x = 1, xend = 2, y = 8, yend = 8), color = "black",linewidth = 0.6) + 
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 14.3, yend = 14.3), color = "#A9405F",linewidth = 0.6) + 
+  #geom_segment(aes(x = 8.2, xend = 8.8, y = 10.1, yend = 10.1), color = "#A9405F",linewidth = 0.6) + 
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  labs(x = "Introduced species (or group)",
+       y = "Introduced community biomass (g, sqrt)",
+       tag = "C") -> Figure_2B; Figure_2B
+
+################################################################################
+############## Aboveground biomass of resident species community ############### 
+################################################################################
+
+mod_pot_mass_R = lmer(SQRTRmass ~ Time * Origin2 * SR2 + 
+                        (1|Origin2:SR2:pot) + 
+                        #(1|species) + 
+                        (1|res_sp_list) + 
+                        (1|add_sp_list), data = pot_mass_ck_removed)
+
+summary(mod_pot_mass_R)
+car::Anova(mod_pot_mass_R)
+ranova(mod_pot_mass_R)
+hist(residuals(mod_pot_mass_R))
+shapiro.test(residuals(mod_pot_mass_R))
+
+time_xO_effect = emmeans(mod_pot_mass_R, specs = pairwise ~ Time*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xO_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+#pot_mass_R_data1 = Rmisc::summarySE(pot_mass_ck_removed, groupvars = c("Time", "Origin2"), measurevar = "SQRTRmass")
+#pot_mass_R_data1 = pot_mass_R_data1 %>% left_join(emm1_multi[,c("Time", "Origin2", ".group", "group_new")])
+pot_mass_R_data1 = emm1_multi
+
+ggplot(pot_mass_R_data1, aes(x = Time, y = emmean, group = Origin2, color = Origin2, fill = Origin2)) + 
+  geom_errorbar(aes(ymin = emmean - 1.96*SE, ymax = emmean + 1.96*SE, color = Origin2), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Origin2), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3.5, pch = 21, position = position_dodge(width = 0.5)) +
+  geom_text(aes(y = ifelse(emmean >= 0, emmean + 1.96*SE, emmean + 1.96*SE),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_mass_R_data1$emmean >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_mass_R_data1$Time),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  scale_y_continuous(limits = c(8, 28),
+                     expand = expansion(mult = 0),
+                     breaks = seq(8, 28, by = 4)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "Resident community biomass (g, sqrt)",
+       tag = "B") -> Figure_S4B; Figure_S4B
+
+################################################################################
+mod_pot_R_effect = lmer(R_effect ~ Time * Origin2 * SR2 + 
+                          (1|Origin2:SR2:pot) + 
+                          (1|res_sp_list) + 
+                          (1|add_sp_list)
+                        , data = effect_effect_data)
+car::Anova(mod_pot_R_effect)
+summary(mod_pot_R_effect)
+ranova(mod_pot_R_effect)
+
+################################################################################
+R_effect_mean = as.tibble(emmeans(mod_pot_R_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(R_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+R_effect_mean_add = R_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "*",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+
+################# effect of identity of second adding species ################## 
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+SQRTRmass_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("R_effect ~", species, " + SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)")) #  + (1|add_sp_list) 
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data, 
+                #family = gaussian(),  # 如果是连续变量
+                control = lmerControl(optimizer = "bobyqa"))
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  SQRTRmass_sp_eff_dat <- rbind(SQRTRmass_sp_eff_dat, species_group)
+}
+
+
+# adding signal
+SQRTRmass_sp_eff_dat$Significance <- case_when(
+  SQRTRmass_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  SQRTRmass_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  SQRTRmass_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #SQRTRmass_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_R_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data[,c(i, "R_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "R_effect")
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_R_effect_mean = rbind(sp_R_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_R_effect_mean = SQRTRmass_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_R_effect_mean$Presence = ifelse(sp_R_effect_mean$Group == 1, "Presence", "Absence")
+sp_R_effect_mean$Presence = factor(sp_R_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_R_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_R_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_R_effect_mean$Group = as.character(sp_R_effect_mean$Group)
+#sp_R_effect_mean$species = factor(sp_R_effect_mean$species, levels = unique(sp_R_effect_mean$species))
+
+sp_R_effect_mean_add = bind_rows(R_effect_mean_add, sp_R_effect_mean)
+colnames(sp_R_effect_mean_add)[2] <- "R_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_R_effect_data <- sp_R_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(R_effect), 
+         is_higher = R_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_R_effect_mean_add, aes(x = x_position, y = R_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_R_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = R_effect -1.96*SE, ymax = R_effect +1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_R_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_R_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = R_effect -1.96*SE, ymax = R_effect +1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_R_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_R_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = R_effect -1.96*SE, ymax = R_effect +1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_R_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  #scale_y_continuous(limits = c(-4, 4), breaks = seq(-4, 4, by = 2),expand = expansion(mult = c(0, 0))) +
+  scale_y_continuous(limits = c(-0.6, 0.3), breaks = seq(-0.6, 0.3, by = 0.3),expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_R_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_R_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = R_effect +1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_R_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = R_effect +1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 1, xend = 2, y = 1.0, yend = 1.0), color = "black",linewidth = 0.6) + 
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 1.2, yend = 1.2), color = "#A9405F",linewidth = 0.6) + 
+  #geom_segment(aes(x = 9.2, xend = 9.8, y = 1.9, yend = 1.9), color = "#3C8FB6",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on recipient native\ncommunity biomass",
+       tag = "A") -> Figure_2A; Figure_2A
+
+################################################################################
+################ Aboveground biomass of whole species community ################ 
+################################################################################
+mod_pot_Com_mass = lmer(sqrtmass ~ Time * Origin2 * SR2 + 
+                          (1|Origin2:SR2:pot) + 
+                          (1|res_sp_list) + 
+                          (1|add_sp_list), data = pot_mass_ck_removed)
+
+summary(mod_pot_Com_mass)
+#anova(mod_pot_Com_mass, type = 3)
+#anova(mod_pot_Com_mass, ddf = "Kenward-Roger", type = 2)
+car::Anova(mod_pot_Com_mass)
+ranova(mod_pot_Com_mass)
+hist(residuals(mod_pot_Com_mass))
+shapiro.test(residuals(mod_pot_Com_mass))
+
+time_xO_effect = emmeans(mod_pot_Com_mass, specs = pairwise ~ Time*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xO_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+#pot_mass_total_data1 = Rmisc::summarySE(pot_mass_ck_removed, groupvars = c("Time", "Origin2"), measurevar = "sqrtmass")
+#pot_mass_total_data1 = pot_mass_total_data1 %>% left_join(emm1_multi[,c("Time", "Origin2", ".group", "group_new")])
+pot_mass_total_data1 = emm1_multi
+
+ggplot(pot_mass_total_data1, aes(x = Time, y = emmean, group = Origin2, color = Origin2, fill = Origin2)) + 
+  geom_errorbar(aes(ymin = emmean - 1.96*SE, ymax = emmean + 1.96*SE, color = Origin2), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Origin2), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3.5, pch = 21, position = position_dodge(width = 0.5)) +
+  geom_text(aes(y = ifelse(emmean >= 0, emmean + 1.96*SE, emmean + 1.96*SE),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_mass_total_data1$emmean >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_X2_mass_data1$Time),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2022" = "5", "2023" = "17", "2024" = "29", "2025" = "40"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  scale_y_continuous(limits = c(8, 28),
+                     expand = expansion(mult = 0),
+                     breaks = seq(8, 28, by = 4)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "Total community biomass (g, sqrt)",
+       tag = "C") -> Figure_S4C; Figure_S4C
+
+
+################################################################################
+mod_pot_T_effect = lmer(T_effect ~ Time * Origin2 * SR2 + 
+                          (1|Origin2:SR2:pot) + 
+                          (1|res_sp_list) + 
+                          (1|add_sp_list), data = effect_effect_data)
+hist(residuals(mod_pot_T_effect))
+shapiro.test(residuals(mod_pot_T_effect))
+car::Anova(mod_pot_T_effect)
+summary(mod_pot_T_effect)
+ranova(mod_pot_T_effect)
+
+################################################################################
+T_effect_mean = as.tibble(emmeans(mod_pot_T_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(T_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+T_effect_mean_add = T_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "**",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+################# effect of identity of second adding species ################## 
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sqrtmass_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # Build formula
+  formula <- as.formula(paste("T_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
+  
+  # fit model
+  model <- lmer(formula, data = effect_effect_data, 
+                #family = gaussian(),  
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  sqrtmass_sp_eff_dat <- rbind(sqrtmass_sp_eff_dat, species_group)
+}
+
+# adding signal
+sqrtmass_sp_eff_dat$Significance <- case_when(
+  sqrtmass_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  sqrtmass_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  sqrtmass_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #sqrtmass_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_T_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data[,c(i, "T_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "T_effect")
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_T_effect_mean = rbind(sp_T_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_T_effect_mean = sqrtmass_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_T_effect_mean$Presence = ifelse(sp_T_effect_mean$Group == 1, "Presence", "Absence")
+sp_T_effect_mean$Presence = factor(sp_T_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_T_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_T_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_T_effect_mean$Group = as.character(sp_T_effect_mean$Group)
+#sp_T_effect_mean$species = factor(sp_T_effect_mean$species, levels = unique(sp_T_effect_mean$species))
+
+sp_T_effect_mean_add = bind_rows(T_effect_mean_add, sp_T_effect_mean)
+colnames(sp_T_effect_mean_add)[2] <- "T_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_T_effect_data <- sp_T_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(T_effect), 
+         is_higher = T_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_T_effect_mean_add, aes(x = x_position, y = T_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_T_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = T_effect - 1.96*SE, ymax = T_effect + 1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_T_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_T_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = T_effect - 1.96*SE, ymax = T_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_T_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_T_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = T_effect - 1.96*SE, ymax = T_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_T_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(limits = c(-0.25, 0.50), breaks = seq(-0.25, 0.50, by = 0.25),expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_T_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_T_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = T_effect + 1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_T_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = T_effect + 1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 1, xend = 2, y = 3.6, yend = 3.6), color = "black",linewidth = 0.6) + 
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 5.3, yend = 5.3), color = "#A9405F",linewidth = 0.6) + 
+  #geom_segment(aes(x = 4.2, xend = 4.8, y =3.3, yend = 3.3), color = "#3C8FB6",linewidth = 0.6) + 
+  #geom_segment(aes(x = 8.2, xend = 8.8, y = 4.5, yend = 4.5), color = "#A9405F",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on whole\ncommunity biomass",
+       #y = expression(atop("Effects on whole community biomass",
+       #                     "(observed"[" in"~introduced] - "observed"[" in"~control] ~ ")")),
+       tag = "B") -> Figure_3B; Figure_3B
+
+################################################################################
+######### CWM leaf leaf pathogen infection of whole species community ##########
+################################################################################
+colnames(pot_mass_ck_removed)
+mod_pot_CWM_F_Disease = lmer(CWM_F_Disease ~ Time * Origin2 * SR2 + 
+                               (1|Origin2:SR2:pot) + 
+                               (1|add_sp_list) + 
+                               (1|res_sp_list), data = pot_mass_ck_removed)
+hist(residuals(mod_pot_CWM_F_Disease))
+shapiro.test(residuals(mod_pot_CWM_F_Disease))
+summary(mod_pot_CWM_F_Disease)
+car::Anova(mod_pot_CWM_F_Disease)
+ranova(mod_pot_CWM_F_Disease)
+
+library(stringr)
+time_effect = emmeans(mod_pot_CWM_F_Disease, specs = pairwise ~ Time, type = "response")
+emm1_multi = multcomp::cld(time_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+#pot_CWM_F_Disease_data1 = Rmisc::summarySE(subset(pot_mass_ck_removed, Time != 2022), groupvars = c("Time"), measurevar = "CWM_F_Disease")
+
+#pot_CWM_F_Disease_data1 = pot_CWM_F_Disease_data1 %>% left_join(emm1_multi[,c("Time", ".group", "group_new")])
+pot_CWM_F_Disease_data1 = emm1_multi
+
+ggplot(pot_CWM_F_Disease_data1, aes(x = Time, y = emmean, group = 1)) + 
+  geom_errorbar(aes(ymin = emmean - 1.96*SE, ymax = emmean + 1.96*SE), 
+                width = 0, position = position_dodge(width = 0), color = "#5C6572", size = 0.8) + 
+  geom_line(position = position_dodge(width = 0), size = 0.8) +
+  geom_point(size = 3.5, pch = 21, color = "#5C6572", fill = "#5C6572", position = position_dodge(width = 0)) +
+  geom_text(aes(y = ifelse(emmean >= 0, emmean + 1.96*SE, emmean + 1.96*SE),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_CWM_F_Disease_data1$emmean >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_CWM_F_Disease_data1$Time),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2023" = "14", "2024" = "26", "2025" = "39"),  
+                   expand = expansion(mult = c(0.1, 0.1))) +
+  #scale_y_continuous(limits = c(8, 28),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(8, 28, by = 4)) +
+  theme_classic() +
+  #scale_color_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Exotic" = "#A9405F")) + 
+  #scale_fill_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Exotic" = "#A9405F")) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of leaf pathogen infection (%)", 
+       tag = "D") -> Figure_S4D; Figure_S4D
+
+
+OXR_effect = emmeans(mod_pot_CWM_F_Disease, specs = pairwise ~ Origin2 * SR2, type = "response")
+emm1_multi = multcomp::cld(OXR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+
+#pot_CWM_F_Disease_data2 = Rmisc::summarySE(subset(pot_mass_ck_removed, Time != 2022), 
+#                                           groupvars = c("SR2", "Origin2"), measurevar = "CWM_F_Disease")
+
+#pot_CWM_F_Disease_data2 = pot_CWM_F_Disease_data2 %>% left_join(emm1_multi[,c("SR2", "Origin2", ".group", "group_new")])
+pot_CWM_F_Disease_data2 = emm1_multi
+
+ggplot(pot_CWM_F_Disease_data2, aes(x = SR2, y = emmean, group = Origin2, fill = Origin2, color = Origin2)) + 
+  geom_errorbar(aes(ymin = emmean - 1.96*SE, ymax = emmean + 1.96*SE), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3.5, pch = 21, position = position_dodge(width = 0.5)) +
+  geom_text(aes(y = ifelse(emmean >= 0, emmean + 1.96*SE, emmean + 1.96*SE),  
+                label = group_new, color = Origin2), color = "black",
+            vjust = ifelse(pot_CWM_F_Disease_data2$emmean >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(expand = expansion(mult = c(0.2, 0.2))) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +
+  theme_classic() +
+  scale_color_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        legend.position = "none") + 
+  labs(x = "Richness of\nintroduced species", 
+       y = NULL ) -> Figure_S4D_IN; Figure_S4D_IN
+
+
+################################################################################
+effect_effect_data_removed = subset(effect_effect_data, Time != 2022)
+
+mod_pot_CWM_F_Disease_effct = lmer(CWM_F_Disease_effect ~ Time * Origin2 * SR2 + 
+                                     (1|Origin2:SR2:pot) + 
+                                     (1|add_sp_list) + 
+                                     (1|res_sp_list), data = effect_effect_data_removed)
+hist(residuals(mod_pot_CWM_F_Disease_effct))
+shapiro.test(residuals(mod_pot_CWM_F_Disease_effct))
+summary(mod_pot_CWM_F_Disease_effct)
+ranova(mod_pot_CWM_F_Disease_effct)
+car::Anova(mod_pot_CWM_F_Disease_effct)
+
+################################################################################
+CWM_F_Disease_effct_mean = as.tibble(emmeans(mod_pot_CWM_F_Disease_effct, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(CWM_F_Disease_effct_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+CWM_F_Disease_effct_mean_add = CWM_F_Disease_effct_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+################# effect of identity of second adding species ################## 
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+CWM_F_Disease_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("CWM_F_Disease_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data_removed, 
+                #family = gaussian(),  # 如果是连续变量
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  CWM_F_Disease_sp_eff_dat <- rbind(CWM_F_Disease_sp_eff_dat, species_group)
+}
+
+# adding signal
+CWM_F_Disease_sp_eff_dat$Significance <- case_when(
+  CWM_F_Disease_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  CWM_F_Disease_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  CWM_F_Disease_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #CWM_F_Disease_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_CWM_F_Disease_effct_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data_removed[,c(i, "CWM_F_Disease_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "CWM_F_Disease_effect")
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_CWM_F_Disease_effct_mean = rbind(sp_CWM_F_Disease_effct_mean, sum_sp_mean)
+}
+
+# add signification
+sp_CWM_F_Disease_effct_mean = CWM_F_Disease_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+#sp_CWM_F_Disease_effct_mean = sp_CWM_F_Disease_effct_mean %>% left_join(CWM_F_Disease_sp_eff_dat[,c("species", "Significance")])
+
+sp_CWM_F_Disease_effct_mean$Presence = ifelse(sp_CWM_F_Disease_effct_mean$Group == 1, "Presence", "Absence")
+sp_CWM_F_Disease_effct_mean$Presence = factor(sp_CWM_F_Disease_effct_mean$Presence, levels = c("Presence", "Absence"))
+sp_CWM_F_Disease_effct_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_CWM_F_Disease_effct_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_CWM_F_Disease_effct_mean$Group = as.character(sp_CWM_F_Disease_effct_mean$Group)
+#sp_CWM_F_Disease_effct_mean$species = factor(sp_CWM_F_Disease_effct_mean$species, levels = unique(sp_CWM_F_Disease_effct_mean$species))
+
+sp_CWM_F_Disease_effct_mean_add = bind_rows(CWM_F_Disease_effct_mean_add, sp_CWM_F_Disease_effct_mean)
+colnames(sp_CWM_F_Disease_effct_mean_add)[2] <- "CWM_F_Disease_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_CWM_F_Disease_effct_data <- sp_CWM_F_Disease_effct_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(CWM_F_Disease_effect), 
+         is_higher = CWM_F_Disease_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_CWM_F_Disease_effct_mean_add, aes(x = x_position, y = CWM_F_Disease_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_CWM_F_Disease_effct_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = CWM_F_Disease_effect -1.96*SE, ymax = CWM_F_Disease_effect +1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_CWM_F_Disease_effct_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_CWM_F_Disease_effct_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = CWM_F_Disease_effect -1.96*SE, ymax = CWM_F_Disease_effect +1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_CWM_F_Disease_effct_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_CWM_F_Disease_effct_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = CWM_F_Disease_effect -1.96*SE, ymax = CWM_F_Disease_effect +1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_CWM_F_Disease_effct_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  #scale_y_continuous(limits = c(-3, 1), breaks = seq(-3, 1, by = 1),expand = expansion(mult = c(0, 0))) +
+  scale_y_continuous(limits = c(-0.60, 0.3), breaks = seq(-0.6, 0.3, by = 0.3), expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_CWM_F_Disease_effct_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_CWM_F_Disease_effct_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = CWM_F_Disease_effect +1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_CWM_F_Disease_effct_data, species == "add_group"), 
+            aes(x = 1.5, y = CWM_F_Disease_effect +1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = -0.3, yend = -0.3), color = "#A9405F",linewidth = 0.6) + 
+  #geom_segment(aes(x = 8.2, xend = 8.8, y = -0.3, yend = -0.3), color = "#A9405F",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on community weighted\nleaf pathogen infection",
+       tag = "C") -> Figure_3C; Figure_3C
+
+
+################################################################################
+######### CWM leaf leaf pathogen infection of whole species community ##########
+################################################################################
+colnames(pot_mass_ck_removed)
+mod_pot_CWM_F_Pest = lmer(CWM_F_Pest ~ Time * Origin2 * SR2 + 
+                            (1|Origin2:SR2:pot) + 
+                            (1|add_sp_list) + 
+                            (1|res_sp_list), data = pot_mass_ck_removed)
+
+summary(mod_pot_CWM_F_Pest)
+car::Anova(mod_pot_CWM_F_Pest)
+ranova(mod_pot_CWM_F_Pest)
+hist(residuals(mod_pot_CWM_F_Pest))
+shapiro.test(residuals(mod_pot_CWM_F_Pest))
+
+time_xOx_SR_effect = emmeans(mod_pot_CWM_F_Pest, specs = pairwise ~ Time*Origin2*SR2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_CWM_F_Pest_data1 = emm1_multi
+#pot_CWM_F_Pest_data1 = Rmisc::summarySE(subset(pot_mass_ck_removed, Time != 2022), groupvars = c("Time", "SR2", "Origin2"), measurevar = "CWM_F_Pest")
+pot_CWM_F_Pest_data1$Group = paste0(pot_CWM_F_Pest_data1$Origin2, "|", pot_CWM_F_Pest_data1$SR2)
+#pot_CWM_F_Pest_data1 = pot_CWM_F_Pest_data1 %>% left_join(emm1_multi[,c("Time", "SR2", "Origin2", ".group", "group_new")])
+
+ggplot(pot_CWM_F_Pest_data1, aes(x = Time, y = emmean, group = Group, color = Group, fill = Group, shape = Group)) + 
+  geom_errorbar(aes(ymin =emmean - 1.96*SE, ymax = emmean + 1.96*SE, color = Group), 
+                width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
+  geom_line(aes(color = Group), position = position_dodge(width = 0.5), size = 0.8) +
+  geom_point(size = 3.5, position = position_dodge(width = 0.5)) + 
+  geom_text(aes(y = ifelse(emmean >= 0, emmean + 1.96*SE, emmean + 1.96*SE),  
+                label = group_new, color = Origin), color = "black",
+            vjust = ifelse(pot_CWM_F_Pest_data1$emmean >= 0, -0.5, -0.5), size = 3.875,
+            position = position_dodge(width = 0.5)) +  # fontface = "bold"
+  scale_x_discrete(breaks = unique(pot_CWM_F_Pest_data1$Time),
+                   #labels = c("Starting", "2021", "2022", "2023", "2024"),
+                   labels = c("2023" = "14", "2024" = "26", "2025" = "39"),  
+                   expand = expansion(mult = c(0.2, 0.2))) +
+  #scale_y_continuous(limits = c(0, 8),
+  #                   expand = expansion(mult = 0),
+  #                   breaks = seq(0, 8, by = 2)) +
+  theme_classic() +
+  scale_color_manual(values = c("ck|0" = "#70319D", 
+                                "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                                "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck|0" = "#70319D", 
+                               "Native|1" = "#3C8FB6", "Native|2" = "#3C8FB6", "Native|4" = "#3C8FB6", 
+                               "Alien|1" = "#A9405F", "Alien|2" = "#A9405F", "Alien|4" = "#A9405F")) + 
+  scale_shape_manual(values = c("ck|0" = 21, 
+                                "Native|1" = 22, "Native|2" = 23, "Native|4" = 24, 
+                                "Alien|1" = 22, "Alien|2" = 23, "Alien|4" = 24)) + 
+  #scale_shape_manual(values = c(21,22,23,24,22,23,24)) + 
+  theme(panel.background = element_rect(fill = "transparent", color = NA),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        axis.ticks = element_line(color='black'),
+        axis.line = element_line(colour = "black"), 
+        axis.title = element_text(colour='black', size=13),
+        axis.text.x = element_text(colour='black',size=11),
+        axis.text.y = element_text(colour='black',size=11),
+        plot.tag = element_text(size = 14, face = "bold"),
+        strip.background = element_rect(color = "black", size = 0.5, fill = "white"),
+        strip.text = element_text(colour='black', size=11), 
+        #plot.margin = margin(1,1,1,2,unit="cm"),
+        legend.position = "none") + 
+  labs(x = "Sampling time (months)", 
+       y = "CWM of leaf defoliation (%)",
+       tag = "E") -> Figure_S4E; Figure_S4E
+
+
+################################################################################ 
+effect_effect_data_removed = subset(effect_effect_data, Time != 2022)
+
+mod_pot_CWM_F_Pest_effect = lmer(CWM_F_Pest_effect ~ Time * Origin2 * SR2 + 
+                                   (1|Origin2:SR2:pot) + 
+                                   (1|add_sp_list) + 
+                                   (1|res_sp_list), data = effect_effect_data_removed)
+
+summary(mod_pot_CWM_F_Pest_effect)
+car::Anova(mod_pot_CWM_F_Pest_effect)
+ranova(mod_pot_CWM_F_Pest_effect)
+hist(residuals(mod_pot_CWM_F_Pest_effect))
+shapiro.test(residuals(mod_pot_CWM_F_Pest_effect))
+
+################################################################################
+CWM_F_Pest_effect_mean = as.tibble(emmeans(mod_pot_CWM_F_Pest_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(CWM_F_Pest_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+CWM_F_Pest_effect_mean_add = CWM_F_Pest_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+# 物种存在、不存在样本内与0的差异
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$CWM_F_Pest_effect, mu = 0)
+t.test(subset(effect_effect_data_removed, Origin2 == "Native")$CWM_F_Pest_effect, mu = 0)
+
+CWM_F_Pest_effect_t_test = NULL
+
+for (species in species_list) {
+  # 提取存在组数据
+  presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "CWM_F_Pest_effect"]
+  t_test_presence <- t.test(presence_data, mu = 0)
+  CWM_F_Pest_effect_t_test <- rbind(CWM_F_Pest_effect_t_test, data.frame(
+    species = species,
+    presence = "Present (1)",
+    t_statistic = t_test_presence$statistic,
+    p_value = t_test_presence$p.value, stringsAsFactors = FALSE))
+  
+  # absence data
+  absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "CWM_F_Pest_effect"]
+  t_test_absence <- t.test(absence_data, mu = 0)
+  # 存储结果
+  CWM_F_Pest_effect_t_test <- rbind(CWM_F_Pest_effect_t_test, data.frame(
+    species = species,
+    presence = "Absent (0)",
+    t_statistic = t_test_absence$statistic,
+    p_value = t_test_absence$p.value,stringsAsFactors = FALSE))
+}
+
+print(CWM_F_Pest_effect_t_test)
+
+################################################################################
+###### effect of identity of second adding species (presence vs. absence) ######
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+CWM_F_Pest_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("CWM_F_Pest_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data_removed, 
+                #family = gaussian(),  # 如果是连续变量
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  CWM_F_Pest_sp_eff_dat <- rbind(CWM_F_Pest_sp_eff_dat, species_group)
+}
+
+# adding signal
+CWM_F_Pest_sp_eff_dat$Significance <- case_when(
+  CWM_F_Pest_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  CWM_F_Pest_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  CWM_F_Pest_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #CWM_F_Pest_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_CWM_F_Pest_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data_removed[,c(i, "CWM_F_Pest_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "CWM_F_Pest_effect")
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_CWM_F_Pest_effect_mean = rbind(sp_CWM_F_Pest_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_CWM_F_Pest_effect_mean = CWM_F_Pest_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_CWM_F_Pest_effect_mean$Presence = ifelse(sp_CWM_F_Pest_effect_mean$Group == 1, "Presence", "Absence")
+sp_CWM_F_Pest_effect_mean$Presence = factor(sp_CWM_F_Pest_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_CWM_F_Pest_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_CWM_F_Pest_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_CWM_F_Pest_effect_mean$Group = as.character(sp_CWM_F_Pest_effect_mean$Group)
+#sp_CWM_F_Pest_effect_mean$species = factor(sp_CWM_F_Pest_effect_mean$species, levels = unique(sp_CWM_F_Pest_effect_mean$species))
+
+sp_CWM_F_Pest_effect_mean_add = bind_rows(CWM_F_Pest_effect_mean_add, sp_CWM_F_Pest_effect_mean)
+colnames(sp_CWM_F_Pest_effect_mean_add)[2] <- "CWM_F_Pest_effect"
+
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_CWM_F_Pest_effect_data <- sp_CWM_F_Pest_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(CWM_F_Pest_effect), 
+         is_higher = CWM_F_Pest_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_CWM_F_Pest_effect_mean_add, aes(x = x_position, y = CWM_F_Pest_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_CWM_F_Pest_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = CWM_F_Pest_effect - 1.96*SE, ymax = CWM_F_Pest_effect + 1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_CWM_F_Pest_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_CWM_F_Pest_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = CWM_F_Pest_effect - 1.96*SE, ymax = CWM_F_Pest_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_CWM_F_Pest_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_CWM_F_Pest_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = CWM_F_Pest_effect - 1.96*SE, ymax = CWM_F_Pest_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_CWM_F_Pest_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(limits = c(-0.4, 0.20), breaks = seq(-0.4, 0.20, by = 0.20), expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_CWM_F_Pest_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_CWM_F_Pest_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = CWM_F_Pest_effect + 1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_CWM_F_Pest_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = CWM_F_Pest_effect + 1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 0.15, yend = 0.15), color = "#A9405F",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on community weighted\nleaf defoliation",
+       tag = "D") -> Figure_3D; Figure_3D
+
+################################################################################
+################# Effects on soil ß−1,4−glucosidase activity ###################
+################################################################################
+pot_mass_ck_removed_soil = pot_mass_ck_removed[pot_mass_ck_removed$Time %in% c(2024, 2025), ]
+colnames(pot_mass_ck_removed_soil)
+mod_pot_E_BG = lmer(E_BG ~ Time * Origin2 * SR2 + 
+                      (1|Origin2:SR2:pot) + 
+                      (1|add_sp_list) + 
+                      (1|res_sp_list), data = pot_mass_ck_removed_soil)
+
+summary(mod_pot_E_BG)
+car::Anova(mod_pot_E_BG)
+ranova(mod_pot_E_BG)
+hist(residuals(mod_pot_E_BG))
+shapiro.test(residuals(mod_pot_E_BG))
+
+time_xOx_SR_effect = emmeans(mod_pot_E_BG, specs = pairwise ~ Time*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_E_BG_data1 = Rmisc::summarySE(pot_mass_ck_removed_soil, groupvars = c("Time", "Origin2"), measurevar = "E_BG", na.rm = T)
+pot_E_BG_data1 = pot_E_BG_data1 %>% left_join(emm1_multi[,c("Time", "Origin2", ".group", "group_new")])
+
+
+################################################################################ 
+effect_effect_data_removed = effect_effect_data[effect_effect_data$Time %in% c(2024, 2025), ]
+
+mod_pot_E_BG_effect = lmer(E_BG_effect ~ Time * Origin2 * SR2 + 
+                             (1|Origin2:SR2:pot) + 
+                             (1|add_sp_list) + 
+                             (1|res_sp_list), data = effect_effect_data_removed)
+
+summary(mod_pot_E_BG_effect)
+car::Anova(mod_pot_E_BG_effect)
+ranova(mod_pot_E_BG_effect)
+hist(residuals(mod_pot_E_BG_effect))
+shapiro.test(residuals(mod_pot_E_BG_effect))
+
+################################################################################
+E_BG_effect_mean = as.tibble(emmeans(mod_pot_E_BG_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(E_BG_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+E_BG_effect_mean_add = E_BG_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "*",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+# 物种存在、不存在样本内与0的差异
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$E_BG_effect, mu = 0)
+t.test(subset(effect_effect_data_removed, Origin2 == "Native")$E_BG_effect, mu = 0)
+
+E_BG_effect_t_test = NULL
+
+for (species in species_list) {
+  # 提取存在组数据
+  presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "E_BG_effect"]
+  t_test_presence <- t.test(presence_data, mu = 0)
+  E_BG_effect_t_test <- rbind(E_BG_effect_t_test, data.frame(
+    species = species,
+    presence = "Present (1)",
+    t_statistic = t_test_presence$statistic,
+    p_value = t_test_presence$p.value, stringsAsFactors = FALSE))
+  
+  # absence data
+  absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "E_BG_effect"]
+  t_test_absence <- t.test(absence_data, mu = 0)
+  # 存储结果
+  E_BG_effect_t_test <- rbind(E_BG_effect_t_test, data.frame(
+    species = species,
+    presence = "Absent (0)",
+    t_statistic = t_test_absence$statistic,
+    p_value = t_test_absence$p.value,stringsAsFactors = FALSE))
+}
+
+print(E_BG_effect_t_test)
+
+################################################################################
+###### effect of identity of second adding species (presence vs. absence) ######
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+E_BG_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("E_BG_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data_removed, 
+                #family = gaussian(),  # 如果是连续变量
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  E_BG_sp_eff_dat <- rbind(E_BG_sp_eff_dat, species_group)
+}
+
+# adding signal
+E_BG_sp_eff_dat$Significance <- case_when(
+  E_BG_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  E_BG_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  E_BG_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #E_BG_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_E_BG_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data_removed[,c(i, "E_BG_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "E_BG_effect", na.rm = T)
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_E_BG_effect_mean = rbind(sp_E_BG_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_E_BG_effect_mean = E_BG_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_E_BG_effect_mean$Presence = ifelse(sp_E_BG_effect_mean$Group == 1, "Presence", "Absence")
+sp_E_BG_effect_mean$Presence = factor(sp_E_BG_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_E_BG_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_E_BG_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_E_BG_effect_mean$Group = as.character(sp_E_BG_effect_mean$Group)
+#sp_E_BG_effect_mean$species = factor(sp_E_BG_effect_mean$species, levels = unique(sp_E_BG_effect_mean$species))
+
+sp_E_BG_effect_mean_add = bind_rows(E_BG_effect_mean_add, sp_E_BG_effect_mean)
+colnames(sp_E_BG_effect_mean_add)[2] <- "E_BG_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_E_BG_effect_data <- sp_E_BG_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(E_BG_effect), 
+         is_higher = E_BG_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_E_BG_effect_mean_add, aes(x = x_position, y = E_BG_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_E_BG_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = E_BG_effect -1.96*SE, ymax = E_BG_effect +1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_E_BG_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_E_BG_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = E_BG_effect -1.96*SE, ymax = E_BG_effect +1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_E_BG_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_E_BG_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = E_BG_effect -1.96*SE, ymax = E_BG_effect +1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_E_BG_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(limits = c(-2, 1), breaks = seq(-2, 1, by = 1), expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_E_BG_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_E_BG_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = E_BG_effect +1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_E_BG_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = E_BG_effect +1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 0.15, yend = 0.15), color = "#A9405F",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on soil\nß 1,4 glucosidase activity",
+       tag = "E") -> Figure_3E; Figure_3E
+
+
+
+################################################################################
+########### Effects on soil ß−1,4−N−acetylglucosaminidase activity #############
+################################################################################
+pot_mass_ck_removed_soil = pot_mass_ck_removed[pot_mass_ck_removed$Time %in% c(2024, 2025), ]
+colnames(pot_mass_ck_removed_soil)
+hist(pot_mass_ck_removed_soil$E_NAG)
+
+mod_pot_E_NAG = lmer(E_NAG ~ Time * Origin2 * SR2 + 
+                       (1|Origin2:SR2:pot) + 
+                       (1|add_sp_list) + 
+                       (1|res_sp_list), data = pot_mass_ck_removed_soil)
+
+summary(mod_pot_E_NAG)
+car::Anova(mod_pot_E_NAG)
+ranova(mod_pot_E_NAG)
+hist(residuals(mod_pot_E_NAG))
+shapiro.test(residuals(mod_pot_E_NAG))
+
+time_xOx_SR_effect = emmeans(mod_pot_E_NAG, specs = pairwise ~ Time*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_E_NAG_data1 = Rmisc::summarySE(pot_mass_ck_removed_soil, groupvars = c("Time", "Origin2"), measurevar = "E_NAG", na.rm = T)
+pot_E_NAG_data1 = pot_E_NAG_data1 %>% left_join(emm1_multi[,c("Time", "Origin2", ".group", "group_new")])
+
+
+################################################################################ 
+effect_effect_data_removed = effect_effect_data[effect_effect_data$Time %in% c(2024, 2025), ]
+
+mod_pot_E_NAG_effect = lmer(E_NAG_effect ~ Time * Origin2 * SR2 + 
+                              (1|Origin2:SR2:pot) + 
+                              (1|add_sp_list) + 
+                              (1|res_sp_list), data = effect_effect_data_removed)
+
+summary(mod_pot_E_NAG_effect)
+car::Anova(mod_pot_E_NAG_effect)
+ranova(mod_pot_E_NAG_effect)
+hist(residuals(mod_pot_E_NAG_effect))
+shapiro.test(residuals(mod_pot_E_NAG_effect))
+
+################################################################################
+E_NAG_effect_mean = as.tibble(emmeans(mod_pot_E_NAG_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(E_NAG_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+E_NAG_effect_mean_add = E_NAG_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+# 物种存在、不存在样本内与0的差异
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$E_NAG_effect, mu = 0)
+t.test(subset(effect_effect_data_removed, Origin2 == "Native")$E_NAG_effect, mu = 0)
+
+E_NAG_effect_t_test = NULL
+
+for (species in species_list) {
+  # 提取存在组数据
+  presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "E_NAG_effect"]
+  t_test_presence <- t.test(presence_data, mu = 0)
+  E_NAG_effect_t_test <- rbind(E_NAG_effect_t_test, data.frame(
+    species = species,
+    presence = "Present (1)",
+    t_statistic = t_test_presence$statistic,
+    p_value = t_test_presence$p.value, stringsAsFactors = FALSE))
+  
+  # absence data
+  absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "E_NAG_effect"]
+  t_test_absence <- t.test(absence_data, mu = 0)
+  # 存储结果
+  E_NAG_effect_t_test <- rbind(E_NAG_effect_t_test, data.frame(
+    species = species,
+    presence = "Absent (0)",
+    t_statistic = t_test_absence$statistic,
+    p_value = t_test_absence$p.value,stringsAsFactors = FALSE))
+}
+
+print(E_NAG_effect_t_test)
+
+################################################################################
+###### effect of identity of second adding species (presence vs. absence) ######
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+E_NAG_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("E_NAG_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data_removed, 
+                #family = gaussian(),  # 如果是连续变量
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  E_NAG_sp_eff_dat <- rbind(E_NAG_sp_eff_dat, species_group)
+}
+
+# adding signal
+E_NAG_sp_eff_dat$Significance <- case_when(
+  E_NAG_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  E_NAG_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  E_NAG_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #E_NAG_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_E_NAG_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data_removed[,c(i, "E_NAG_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "E_NAG_effect", na.rm = T)
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_E_NAG_effect_mean = rbind(sp_E_NAG_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_E_NAG_effect_mean = E_NAG_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_E_NAG_effect_mean$Presence = ifelse(sp_E_NAG_effect_mean$Group == 1, "Presence", "Absence")
+sp_E_NAG_effect_mean$Presence = factor(sp_E_NAG_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_E_NAG_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_E_NAG_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_E_NAG_effect_mean$Group = as.character(sp_E_NAG_effect_mean$Group)
+#sp_E_NAG_effect_mean$species = factor(sp_E_NAG_effect_mean$species, levels = unique(sp_E_NAG_effect_mean$species))
+
+sp_E_NAG_effect_mean_add = bind_rows(E_NAG_effect_mean_add, sp_E_NAG_effect_mean)
+colnames(sp_E_NAG_effect_mean_add)[2] <- "E_NAG_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_E_NAG_effect_data <- sp_E_NAG_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(E_NAG_effect), 
+         is_higher = E_NAG_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_E_NAG_effect_mean_add, aes(x = x_position, y = E_NAG_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_E_NAG_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = E_NAG_effect - 1.96*SE, ymax = E_NAG_effect + 1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_E_NAG_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_E_NAG_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = E_NAG_effect - 1.96*SE, ymax = E_NAG_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_E_NAG_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_E_NAG_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = E_NAG_effect - 1.96*SE, ymax = E_NAG_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_E_NAG_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(limits = c(-1.5, 0.75), breaks = seq(-1.5, 0.75, by = 0.75), expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_E_NAG_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_E_NAG_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = E_NAG_effect + 1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_E_NAG_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = E_NAG_effect + 1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 0.15, yend = 0.15), color = "#A9405F",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on soil\nß 1,4 N acetylglucosaminidase activity",
+       tag = "F") -> Figure_3F; Figure_3F
+
+
+
+################################################################################
+########### Effects on soil acid phosphatase activity #############
+################################################################################
+pot_mass_ck_removed_soil = pot_mass_ck_removed[pot_mass_ck_removed$Time %in% c(2024, 2025), ]
+colnames(pot_mass_ck_removed_soil)
+mod_pot_E_AP = lmer(E_AP ~ Time * Origin2 * SR2 + 
+                      (1|Origin2:SR2:pot) + 
+                      (1|add_sp_list) + 
+                      (1|res_sp_list), data = pot_mass_ck_removed_soil)
+
+summary(mod_pot_E_AP)
+car::Anova(mod_pot_E_AP)
+ranova(mod_pot_E_AP)
+hist(residuals(mod_pot_E_AP))
+shapiro.test(residuals(mod_pot_E_AP))
+
+time_xOx_SR_effect = emmeans(mod_pot_E_AP, specs = pairwise ~ Time*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_E_AP_data1 = Rmisc::summarySE(pot_mass_ck_removed_soil, groupvars = c("Time", "Origin2"), measurevar = "E_AP", na.rm = T)
+pot_E_AP_data1 = pot_E_AP_data1 %>% left_join(emm1_multi[,c("Time", "Origin2", ".group", "group_new")])
+
+
+################################################################################ 
+effect_effect_data_removed = effect_effect_data[effect_effect_data$Time %in% c(2024, 2025), ]
+
+mod_pot_E_AP_effect = lmer(E_AP_effect ~ Time * Origin2 * SR2 + 
+                             (1|Origin2:SR2:pot) + 
+                             (1|add_sp_list) + 
+                             (1|res_sp_list), data = effect_effect_data_removed)
+
+summary(mod_pot_E_AP_effect)
+car::Anova(mod_pot_E_AP_effect)
+ranova(mod_pot_E_AP_effect)
+hist(residuals(mod_pot_E_AP_effect))
+shapiro.test(residuals(mod_pot_E_AP_effect))
+
+################################################################################
+E_AP_effect_mean = as.tibble(emmeans(mod_pot_E_AP_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(E_AP_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+E_AP_effect_mean_add = E_AP_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+# 物种存在、不存在样本内与0的差异
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$E_AP_effect, mu = 0)
+t.test(subset(effect_effect_data_removed, Origin2 == "Native")$E_AP_effect, mu = 0)
+
+E_AP_effect_t_test = NULL
+
+for (species in species_list) {
+  # 提取存在组数据
+  presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "E_AP_effect"]
+  t_test_presence <- t.test(presence_data, mu = 0)
+  E_AP_effect_t_test <- rbind(E_AP_effect_t_test, data.frame(
+    species = species,
+    presence = "Present (1)",
+    t_statistic = t_test_presence$statistic,
+    p_value = t_test_presence$p.value, stringsAsFactors = FALSE))
+  
+  # absence data
+  absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "E_AP_effect"]
+  t_test_absence <- t.test(absence_data, mu = 0)
+  # 存储结果
+  E_AP_effect_t_test <- rbind(E_AP_effect_t_test, data.frame(
+    species = species,
+    presence = "Absent (0)",
+    t_statistic = t_test_absence$statistic,
+    p_value = t_test_absence$p.value,stringsAsFactors = FALSE))
+}
+
+print(E_AP_effect_t_test)
+
+################################################################################
+###### effect of identity of second adding species (presence vs. absence) ######
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+E_AP_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("E_AP_effect ~", species, " + SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data_removed, 
+                #family = gaussian(),  # 如果是连续变量
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  E_AP_sp_eff_dat <- rbind(E_AP_sp_eff_dat, species_group)
+}
+
+
+# adding signal
+E_AP_sp_eff_dat$Significance <- case_when(
+  E_AP_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  E_AP_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  E_AP_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #E_AP_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_E_AP_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data_removed[,c(i, "E_AP_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "E_AP_effect", na.rm = T)
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_E_AP_effect_mean = rbind(sp_E_AP_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_E_AP_effect_mean = E_AP_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_E_AP_effect_mean$Presence = ifelse(sp_E_AP_effect_mean$Group == 1, "Presence", "Absence")
+sp_E_AP_effect_mean$Presence = factor(sp_E_AP_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_E_AP_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_E_AP_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_E_AP_effect_mean$Group = as.character(sp_E_AP_effect_mean$Group)
+#sp_E_AP_effect_mean$species = factor(sp_E_AP_effect_mean$species, levels = unique(sp_E_AP_effect_mean$species))
+
+sp_E_AP_effect_mean_add = bind_rows(E_AP_effect_mean_add, sp_E_AP_effect_mean)
+colnames(sp_E_AP_effect_mean_add)[2] <- "E_AP_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_E_AP_effect_data <- sp_E_AP_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(E_AP_effect), 
+         is_higher = E_AP_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_E_AP_effect_mean_add, aes(x = x_position, y = E_AP_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_E_AP_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = E_AP_effect - 1.96*SE, ymax = E_AP_effect + 1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_E_AP_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_E_AP_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = E_AP_effect - 1.96*SE, ymax = E_AP_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_E_AP_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_E_AP_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = E_AP_effect - 1.96*SE, ymax = E_AP_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_E_AP_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(limits = c(-0.8, 0.4), breaks = seq(-0.8, 0.4, by = 0.4), expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_E_AP_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_E_AP_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = E_AP_effect + 1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_E_AP_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = E_AP_effect + 1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 0.15, yend = 0.15), color = "#A9405F",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on soil\nacid phosphatase activity",
+       tag = "G") -> Figure_3G; Figure_3G
+
+
+
+################################################################################
+########### Effects on soil total nitrogen content #############
+################################################################################
+pot_mass_ck_removed_soil = pot_mass_ck_removed[pot_mass_ck_removed$Time %in% c(2025), ]
+colnames(pot_mass_ck_removed_soil)
+mod_pot_soilN = lmer(soilN ~ Origin2 * SR2 + 
+                       (1|add_sp_list) + 
+                       (1|res_sp_list), data = pot_mass_ck_removed_soil)
+
+summary(mod_pot_soilN)
+car::Anova(mod_pot_soilN)
+ranova(mod_pot_soilN)
+hist(residuals(mod_pot_soilN))
+shapiro.test(residuals(mod_pot_soilN))
+
+time_xOx_SR_effect = emmeans(mod_pot_soilN, specs = pairwise ~ Time*Origin2, type = "response")
+emm1_multi = multcomp::cld(time_xOx_SR_effect, alpha=0.05, Letters=letters, adjust="none", decreasing = T)
+emm1_multi$.group <- trimws(emm1_multi$.group)
+
+emm1_multi <- emm1_multi %>%
+  mutate(group_new = if_else(
+    str_length(.group) >= 2,
+    paste0(str_extract(.group, "^([a-zA-Z])"),
+           "-",str_extract(.group, "([a-zA-Z])$")),.group))
+
+pot_soilN_data1 = Rmisc::summarySE(pot_mass_ck_removed_soil, groupvars = c("Time", "Origin2"), measurevar = "soilN", na.rm = T)
+pot_soilN_data1 = pot_soilN_data1 %>% left_join(emm1_multi[,c("Time", "Origin2", ".group", "group_new")])
+
+
+################################################################################ 
+effect_effect_data_removed = effect_effect_data[effect_effect_data$Time %in% c(2025), ]
+
+mod_pot_soilN_effect = lmer(soilN_effect ~ Origin2 * SR2 + 
+                              (1|add_sp_list) + 
+                              (1|res_sp_list), data = effect_effect_data_removed)
+
+summary(mod_pot_soilN_effect)
+car::Anova(mod_pot_soilN_effect)
+ranova(mod_pot_soilN_effect)
+hist(residuals(mod_pot_soilN_effect))
+shapiro.test(residuals(mod_pot_soilN_effect))
+
+################################################################################
+soilN_effect_mean = as.tibble(emmeans(mod_pot_soilN_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(soilN_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+soilN_effect_mean_add = soilN_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+# 物种存在、不存在样本内与0的差异
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$soilN_effect, mu = 0)
+t.test(subset(effect_effect_data_removed, Origin2 == "Native")$soilN_effect, mu = 0)
+
+soilN_effect_t_test = NULL
+
+for (species in species_list) {
+  # 提取存在组数据
+  presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "soilN_effect"]
+  t_test_presence <- t.test(presence_data, mu = 0)
+  soilN_effect_t_test <- rbind(soilN_effect_t_test, data.frame(
+    species = species,
+    presence = "Present (1)",
+    t_statistic = t_test_presence$statistic,
+    p_value = t_test_presence$p.value, stringsAsFactors = FALSE))
+  
+  # absence data
+  absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "soilN_effect"]
+  t_test_absence <- t.test(absence_data, mu = 0)
+  # 存储结果
+  soilN_effect_t_test <- rbind(soilN_effect_t_test, data.frame(
+    species = species,
+    presence = "Absent (0)",
+    t_statistic = t_test_absence$statistic,
+    p_value = t_test_absence$p.value,stringsAsFactors = FALSE))
+}
+
+print(soilN_effect_t_test)
+
+################################################################################
+###### effect of identity of second adding species (presence vs. absence) ######
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+soilN_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # 构建公式
+  formula <- as.formula(paste("soilN_effect ~", species, " + SR2 + (1|res_sp_list)"))
+  
+  # 拟合模型
+  model <- lmer(formula, data = effect_effect_data_removed, 
+                #family = gaussian(),  # 如果是连续变量
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  soilN_sp_eff_dat <- rbind(soilN_sp_eff_dat, species_group)
+}
+
+
+# adding signal
+soilN_sp_eff_dat$Significance <- case_when(
+  soilN_sp_eff_dat$chisq_p < 0.001 ~ "***",
+  soilN_sp_eff_dat$chisq_p < 0.01  ~ "**",
+  soilN_sp_eff_dat$chisq_p < 0.05  ~ "*",
+  #soilN_eff_dat_all$chisq_p < 0.1   ~ "†",  
+  TRUE ~ "")
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_soilN_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_effect_data_removed[,c(i, "soilN_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "soilN_effect", na.rm = T)
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_soilN_effect_mean = rbind(sp_soilN_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_soilN_effect_mean = soilN_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_soilN_effect_mean$Presence = ifelse(sp_soilN_effect_mean$Group == 1, "Presence", "Absence")
+sp_soilN_effect_mean$Presence = factor(sp_soilN_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_soilN_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_soilN_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_soilN_effect_mean$Group = as.character(sp_soilN_effect_mean$Group)
+#sp_soilN_effect_mean$species = factor(sp_soilN_effect_mean$species, levels = unique(sp_soilN_effect_mean$species))
+
+sp_soilN_effect_mean_add = bind_rows(soilN_effect_mean_add, sp_soilN_effect_mean)
+colnames(sp_soilN_effect_mean_add)[2] <- "soilN_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_soilN_effect_data <- sp_soilN_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(soilN_effect), 
+         is_higher = soilN_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_soilN_effect_mean_add, aes(x = x_position, y = soilN_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_soilN_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = soilN_effect - 1.96*SE, ymax = soilN_effect + 1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_soilN_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_soilN_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = soilN_effect - 1.96*SE, ymax = soilN_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_soilN_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_soilN_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin = soilN_effect - 1.96*SE, ymax = soilN_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_soilN_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(limits = c(-0.5, 0.25), breaks = seq(-0.5, 0.25, by = 0.25), expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_soilN_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_soilN_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = soilN_effect + 1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_soilN_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = soilN_effect + 1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 3.2, xend = 3.8, y = 0.15, yend = 0.15), color = "#A9405F",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on soil total nitrogen content",
+       tag = "I") -> Figure_3I; Figure_3I
+
+
+################################################################################
+####### Effects on litter loss estimated in situ. (presence vs. absence) #######
+################################################################################
+
+pot_mass_Linsitu = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "Linsitu", rowNames = F, colNames = T)
+pot_mass_Linsitu$Origin2 = ifelse(pot_mass_Linsitu$Origin2 == "Exotic", "Alien", pot_mass_Linsitu$Origin2)
+pot_mass_Linsitu$Origin2 = as.factor(pot_mass_Linsitu$Origin2)
+pot_mass_Linsitu$SR2 = as.factor(pot_mass_Linsitu$SR2)
+pot_mass_Linsitu$pot = as.factor(pot_mass_Linsitu$pot)
+pot_mass_Linsitu$add_sp_list = as.factor(pot_mass_Linsitu$add_sp_list)
+pot_mass_Linsitu$res_sp_list = as.factor(pot_mass_Linsitu$res_sp_list)
+
+pot_mass_ck_removed = subset(pot_mass_Linsitu, Origin2 != "ck")
+
+mod_pot_Linsitu = lmer(Mloss ~ Origin2 * SR2 + 
+                         (1|Origin2:SR2:pot) + 
+                         (1|add_sp_list) + 
+                         (1|res_sp_list), data = pot_mass_ck_removed)
+
+shapiro.test(residuals(mod_pot_Linsitu))
+car::Anova(mod_pot_Linsitu)
+summary(mod_pot_Linsitu)
+ranova(mod_pot_Linsitu)
+
+# 获取对照处理各年份、各群落类型下均值
+pot_mass_ck_data = subset(pot_mass_Linsitu, Origin2 == "ck")
+
+effect_Linsitu_data = NULL
+
+for (ii in 1:nrow(pot_mass_ck_removed)) {
+  sel_pot = pot_mass_ck_removed[ii, ]
+  
+  # 获取选取的样方信息
+  sel_Time = sel_pot$Time; sel_Pcom = sel_pot$Res_comm
+  
+  # 获取对应对照处理数据
+  sel_ck_data = subset(pot_mass_ck_data, Time == sel_Time & Res_comm == sel_Pcom)
+  
+  # 计算效应值
+  sel_pot$Linsitu_effect = mean(log(sel_pot$Mloss / sel_ck_data$Mloss), na.rm = TRUE)
+  
+  effect_Linsitu_data = rbind(effect_Linsitu_data, sel_pot)
+}
+
+#
+mod_pot_Linsitu_effect = lmer(Linsitu_effect ~ Origin2 * SR2 + 
+                                (1|Origin2:SR2:pot) + 
+                                (1|res_sp_list) + 
+                                (1|add_sp_list), data = effect_Linsitu_data, control = lmerControl(optimizer = "bobyqa"))
+car::Anova(mod_pot_Linsitu_effect)
+summary(mod_pot_Linsitu_effect)
+ranova(mod_pot_Linsitu_effect)
+
+################################################################################
+Linsitu_effect_mean = as.tibble(emmeans(mod_pot_Linsitu_effect, specs = pairwise ~ Origin2, type = "response")$emmeans)
+colnames(Linsitu_effect_mean)[1] = "Group"
+
+# Create some blank rows to facilitate merging below.
+Linsitu_effect_mean_add = Linsitu_effect_mean %>%
+  mutate(species = c("add_group", "add_group"),
+         Significance = "",
+         Presence = "",
+         Origin = Group,
+         x_position = c(1, 2))
+
+# 物种存在、不存在样本内与0的差异
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+t.test(subset(effect_Linsitu_data, Origin2 == "Alien")$Linsitu_effect, mu = 0)
+t.test(subset(effect_Linsitu_data, Origin2 == "Native")$Linsitu_effect, mu = 0)
+
+effect_Linsitu_t_test = NULL
+
+for (species in species_list) {
+  # 提取存在组数据
+  presence_data <- effect_Linsitu_data[effect_Linsitu_data[[species]] == "1", "Linsitu_effect"]
+  t_test_presence <- t.test(presence_data, mu = 0)
+  effect_Linsitu_t_test <- rbind(effect_Linsitu_t_test, data.frame(
+    species = species,
+    presence = "Present (1)",
+    t_statistic = t_test_presence$statistic,
+    p_value = t_test_presence$p.value, stringsAsFactors = FALSE))
+  
+  # absence data
+  absence_data <- effect_Linsitu_data[effect_Linsitu_data[[species]] == "0", "Linsitu_effect"]
+  t_test_absence <- t.test(absence_data, mu = 0)
+  # 存储结果
+  effect_Linsitu_t_test <- rbind(effect_Linsitu_t_test, data.frame(
+    species = species,
+    presence = "Absent (0)",
+    t_statistic = t_test_absence$statistic,
+    p_value = t_test_absence$p.value,stringsAsFactors = FALSE))
+}
+
+effect_Linsitu_t_test$p_value = round(effect_Linsitu_t_test$p_value, 3)
+print(effect_Linsitu_t_test)
+
+################# effect of identity of second adding species ################## 
+# "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL"
+
+MOD = lmer(Linsitu_effect ~ CAL + (1 | Origin2:SR2:pot), data = effect_Linsitu_data)
+car::Anova(MOD)
+
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+#effect_Linsitu_data[species_list] <- lapply(effect_Linsitu_data[species_list], as.factor)
+
+Linsitu_effect_sp_eff_dat <- data.frame()
+
+for(species in species_list) {
+  
+  cat("Currently analyzing species:", species, "\n") 
+  
+  # Build formula
+  formula <- as.formula(paste("Linsitu_effect ~", species, " + SR2 + (1|Origin2:SR2:pot) + (1|res_sp_list)")) # + (1|add_sp_list) + (1|res_sp_list)
+  
+  # fit model
+  model <- lmer(formula, data = effect_Linsitu_data, 
+                #family = gaussian(),  
+                control = lmerControl(optimizer = "bobyqa"))
+  
+  contrast_formula <- as.formula(paste("pairwise ~", species))
+  
+  species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
+  print(species_emmeans$contrasts)
+  # 提取系数
+  Anova_data = as.data.frame(car::Anova(model))
+  
+  species_group = as.tibble(species_emmeans$emmeans)
+  species_group$species = species
+  species_group$Chisq = Anova_data$Chisq[1]
+  species_group$Df = Anova_data$Df[1]
+  species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
+  colnames(species_group)[1] <- "Group"
+  
+  # 存储结果
+  Linsitu_effect_sp_eff_dat <- rbind(Linsitu_effect_sp_eff_dat, species_group)
+}
+
+# adding signal
+Linsitu_effect_sp_eff_dat$Significance <- case_when(
+  Linsitu_effect_sp_eff_dat$chisq_p <= 0.001 ~ "***",
+  Linsitu_effect_sp_eff_dat$chisq_p <= 0.01  ~ "**",
+  Linsitu_effect_sp_eff_dat$chisq_p <= 0.05  ~ "*",
+  #Linsitu_effect_sp_eff_dat$chisq_p <= 0.1   ~ "†",  
+  TRUE ~ "")
+
+print(Linsitu_effect_sp_eff_dat)
+
+# 计算各物种存在与不存在样方的均值及其95%CI
+species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
+
+sp_Linsitu_effect_mean = NULL
+
+for (i in species_list) {
+  sel_var_data = effect_Linsitu_data[,c(i, "Linsitu_effect")]
+  sum_sp_mean = Rmisc::summarySE(data = sel_var_data, groupvars = i, measurevar = "Linsitu_effect", na.rm = T)
+  colnames(sum_sp_mean)[1] = "Group"; sum_sp_mean$species = i
+  sp_Linsitu_effect_mean = rbind(sp_Linsitu_effect_mean, sum_sp_mean)
+}
+
+# add signification
+sp_Linsitu_effect_mean = Linsitu_effect_sp_eff_dat[,c("Group", "emmean", "SE", "df", "lower.CL", "upper.CL", "species", "Significance")]
+
+sp_Linsitu_effect_mean$Presence = ifelse(sp_Linsitu_effect_mean$Group == 1, "Presence", "Absence")
+sp_Linsitu_effect_mean$Presence = factor(sp_Linsitu_effect_mean$Presence, levels = c("Presence", "Absence"))
+sp_Linsitu_effect_mean$Origin = rep(c("Alien", "Alien", "Native", "Native"), 5)
+sp_Linsitu_effect_mean$x_position = rep(c(3.5,4.5,6,7,8.5,9.5,11,12,13.5,14.5), each = 2)
+sp_Linsitu_effect_mean$Group = as.character(sp_Linsitu_effect_mean$Group)
+#sp_Linsitu_effect_mean$species = factor(sp_Linsitu_effect_mean$species, levels = unique(sp_Linsitu_effect_mean$species))
+
+sp_Linsitu_effect_mean_add = bind_rows(Linsitu_effect_mean_add, sp_Linsitu_effect_mean)
+colnames(sp_Linsitu_effect_mean_add)[2] <- "Linsitu_effect"
+
+# 找出每个物种内部Presence和Absence哪个值更高
+higher_Linsitu_effect_data <- sp_Linsitu_effect_mean_add %>%
+  group_by(species) %>%
+  mutate(max_X2 = max(Linsitu_effect), 
+         is_higher = Linsitu_effect == max_X2) %>%
+  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+
+labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
+                 "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
+
+ggplot(sp_Linsitu_effect_mean_add, aes(x = x_position, y = Linsitu_effect, fill = Origin, color = Origin)) + 
+  geom_errorbar(data = subset(sp_Linsitu_effect_mean_add, species == "add_group"), width = 0, size = 0.6,
+                aes(x_position, ymin = Linsitu_effect - 1.96*SE, ymax = Linsitu_effect + 1.96*SE, 
+                    color = Origin, group = species)) + 
+  geom_point(data = subset(sp_Linsitu_effect_mean_add, species == "add_group"), size = 3.25, pch = 21, 
+             aes(x = x_position)) +
+  geom_errorbar(data = subset(sp_Linsitu_effect_mean_add, Presence == "Presence"), width = 0, size = 0.6,
+                aes(x_position-0.15, ymin = Linsitu_effect - 1.96*SE, ymax = Linsitu_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_Linsitu_effect_mean_add, Presence == "Presence"), size = 3.25, pch = 21, 
+             aes(x = x_position-0.15)) +
+  geom_errorbar(data = subset(sp_Linsitu_effect_mean_add, Presence == "Absence"), width = 0, size = 0.6,
+                aes(x_position+0.15, ymin =Linsitu_effect - 1.96*SE, ymax = Linsitu_effect + 1.96*SE, 
+                    color = Origin, group = Presence)) + 
+  geom_point(data = subset(sp_Linsitu_effect_mean_add, Presence == "Absence"), size = 3.25, pch = 21, 
+             aes(x = x_position+0.15), fill = "white") +
+  scale_y_continuous(limits = c(-0.4, 0.2), breaks = seq(-0.4, 0.2, by = 0.2),expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(breaks = unique(sp_Linsitu_effect_mean_add$x_position),  
+                     labels = labels_infor,
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  geom_text(data = subset(higher_Linsitu_effect_data, species != "add_group"), 
+            aes(x = x_position+0.025, y = Linsitu_effect + 1.96*SE, label = Significance, color = Origin), 
+            vjust = -0.5, size = 5.5) +  # fontface = "bold"
+  geom_text(data = subset(higher_Linsitu_effect_data, species == "add_group"), 
+            aes(x = 1.5, y = Linsitu_effect + 1.96*SE, label = Significance), 
+            vjust = -0.5, size = 5.5, color = "black") +  # fontface = "bold"
+  scale_color_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_fill_manual(values = c("ck" = "#70319D", "Native" = "#3C8FB6", "Alien" = "#A9405F")) + 
+  scale_shape_manual(values = c(21,16)) + 
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 2.7, linetype = 2) +
+  mytheme + # theme(legend.position = "right") +
+  #geom_segment(aes(x = 5.7, xend = 6.3, y = -0.5, yend = -0.5), color = "#A9405F",linewidth = 0.6) + 
+  #geom_segment(aes(x = 14.2, xend = 14.8, y = 0.5, yend = 0.5), color = "#3C8FB6",linewidth = 0.6) + 
+  labs(x = "Introduced species (or group)", 
+       y = "Effects on litter decomposition rate\nestimated in field",
+       #y = expression(atop("Effects on litter decomposition rate",
+       #                     "during in situ (introduced - control)")),
+       tag = "H") -> Figure_3H; Figure_3H
+
+#ggsave("Figure_3-0520.pdf", plot = Figure_3, width = 15.5, height = 12, units = "in", dpi = 300)
+
+
+
+(Figure_S4A/Figure_S4D)|(Figure_S4B/Figure_S4E)|(Figure_S4C/Figure_S4C)
