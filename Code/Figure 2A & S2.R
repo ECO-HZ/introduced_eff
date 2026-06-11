@@ -243,6 +243,140 @@ ggplot(data = second_sp_origin_data, aes(x = Origin2, y = prob, fill = Origin2, 
   scale_fill_manual(values = c("Control" = "#70319D", "Native" = "#3C8FB6", "Exotic" = "#A9405F")) +
   labs(x = NULL, y = NULL)
 
+################################################################################
+################################# Figure 4A  ###################################
+################################################################################
 
+traits_mean = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "traits_mean", rowNames = F, colNames = T)
+traits_mean$F_flowT = as.numeric(traits_mean$F_flowT)
 
+persistence_4y_X2 = persistence_4y_X2 %>% left_join(traits_mean)
+library(effects)
+
+colnames(persistence_4y_X2_multi)
+persistence_4y_X2_multi <- persistence_4y_X2
+persistence_4y_X2_multi$F_hgt <- log10(persistence_4y_X2_multi$F_hgt)
+persistence_4y_X2_multi$F_LA <- log10(persistence_4y_X2_multi$F_LA)
+persistence_4y_X2_multi$F_SLA <- log10(persistence_4y_X2_multi$F_SLA)
+persistence_4y_X2_multi$F_LDMC <- log10(persistence_4y_X2_multi$F_LDMC)
+persistence_4y_X2_multi$F_seeds <- log10(persistence_4y_X2_multi$F_seeds)
+
+# Consider normalizing your data
+var_select <- c("F_hgt","F_LA","F_SLA","F_LDMC","F_seeds","F_germT","F_flowT")
+pd_attributes_variable <- attributes(scale(persistence_4y_X2_multi[var_select]))
+total_data <- persistence_4y_X2_multi
+total_data[var_select] <- scale(total_data[var_select])
+
+cor.test(total_data$F_SLA, total_data$F_LDMC)
+
+library(corrplot)
+library(Hmisc)
+corr_matrix <- rcorr(as.matrix((total_data[, c("F_hgt","F_LA","F_SLA","F_LDMC","F_seeds","F_germT","F_flowT")])), type = 'spearman')
+corr_matrix$r   
+corr_matrix$P  
+
+p.mat = corr_matrix$P
+diag(p.mat) = 0
+
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(corr_matrix$r, p.mat = p.mat, sig.level = 0.05, insig = 'blank', method = 'number',type = 'lower',
+         diag = F, col=col(200), tl.cex = 0.8,tl.col = "black", number.cex = 0.8, order = "original",tl.srt = 45)
+
+corrplot(corr_matrix$r, p.mat = p.mat, sig.level = 0.05, insig = 'blank', method = 'square',
+         add = TRUE, type = 'lower', diag = F, col=col(200), tl.pos = 'n', cl.pos = 'n',outline = F, order = "original",
+         addCoef.col = "black", number.cex = 0.8)
+
+# performed the global linear regression model
+total_data = subset(total_data, total_data$F_LA != "NA")
+
+options(na.action = "na.fail")
+fm1 <- glmer(present_y4 ~ F_hgt + F_LA + F_LDMC + F_germT + F_flowT + F_seeds + 
+               (1|Origin2:SR2:pot) + 
+               (1|res_sp_list) + 
+               (1 |add_sp_list), 
+             control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)),
+             family = binomial(link = "logit"), data = total_data)
+vif(fm1)
+summary(fm1)
+performance::r2(fm1)
+MuMIn::r.squaredGLMM(fm1)
+
+library(MuMIn)
+dd12 <- dredge(fm1, trace = 2, rank = "AICc")
+                 
+# get the coefficient and the standard error
+resultModel <- summary(object = MuMIn::model.avg(object = dd12, 
+                                                 subset = delta < 4))$coefmat.subset[c(-1),]
+
+resultModel <- as.data.frame(resultModel)
+colnames(resultModel)[c(1,2)] <- c("coeff", "stdError")
+rownames(resultModel)[which(rownames(resultModel) == "F_flowT")] <- "Flower data"
+rownames(resultModel)[which(rownames(resultModel) == "F_germT")] <- "Germ data"
+rownames(resultModel)[which(rownames(resultModel) == "F_hgt")] <- "Height"
+rownames(resultModel)[which(rownames(resultModel) == "F_LDMC")] <- "LDMC"
+rownames(resultModel)[which(rownames(resultModel) == "F_seeds")] <- "# of seeds"
+rownames(resultModel)[which(rownames(resultModel) == "F_LA")] <- "LA"
+
+resultModel$label <- rownames(resultModel)
+resultModel$label <- factor(resultModel$label, levels = rev(c("Height", "LA", "LDMC", "Slope", 
+                                                          "Germ data", "Flower data", "# of seeds")))
+
+resultModel$explained_var = abs(resultModel$coeff)/sum(abs(resultModel$coeff))*100
+
+ggplot(resultModel, aes(x=label, y=coeff,  color = label)) + 
+  geom_errorbar(aes(ymin=coeff-1.96*stdError, ymax=coeff+1.96*stdError, color = label), 
+                width=0, size = 0.8)+
+  geom_point(size = 3.5, pch = 16) + 
+  labs(x = '', 
+       y = 'Standard regression coefficients') +  
+  theme_minimal() + coord_flip() +
+  scale_x_discrete(position = "top") + 
+  scale_color_manual(values = c("# of seeds" = "#BC5546", "Flower data" = "#2F4590", "Germ data" = "#6EA3C5",
+                                "LDMC" = "#8E333A", "LA" = "#EFA961", "Height" = "#769D89")) +
+  scale_fill_manual(values = c("# of seeds" = "#BC5546", "Flower data" = "#2F4590", "Germ data" = "#6EA3C5",
+                               "LDMC" = "#8E333A", "LA" = "#EFA961", "Height" = "#769D89")) +
+  theme(axis.text = element_text(color = "black", size = 12),
+        axis.title =  element_text(color = "black", size = 14),
+        legend.text = element_text(size = 9, color = "black"),
+        #plot.title = element_textbox(size = 12, color = "black", fill = "white",     
+        #                             box.color = "black", width = grid::unit(1, "npc"),padding = margin(5, 5, 5, 5),  
+        #                             margin = margin(b = 5), halign = 0.5,linetype = "solid"),
+        #plot.margin = margin(0.5,1.5,0.5,1.5, unit = "cm"),
+        axis.line.x = element_line(color = "black"),
+        axis.ticks.x = element_line(color='black'),
+        legend.position = 'none',
+        panel.grid = element_blank(), 
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.background = element_blank(),
+        panel.border = element_blank(), 
+        plot.tag = element_text(size = 14, face = "bold")) +
+  geom_hline(yintercept = 0,linetype=2) -> Fig4_ab
+  
+
+resultModel$label <- factor(resultModel$label, levels = (c("Height", "LA", "LDMC", 
+                                                              "Germ data", "Flower data", "# of seeds")))
+
+ggplot(resultModel, aes(x = "Variables", y = explained_var, fill = label)) +
+  geom_col(width = 1, color = "white") +
+  #scale_fill_viridis(option = "D", direction = -1) + # + 
+  theme_classic()+ 
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c("# of seeds" = "#BC5546", "Flower data" = "#2F4590", "Germ data" = "#6EA3C5",
+                              "LDMC" = "#8E333A", "LA" = "#EFA961", "Height" = "#769D89")) +
+  theme(panel.grid = element_blank(), 
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.background = element_blank(),
+        panel.border = element_blank(), 
+        axis.title =  element_text(color = "black", size = 14),
+        axis.line.x = element_line(color = "black"),
+        axis.line.y = element_line(color = "black"),
+        axis.text = element_text(size = 12, color = "black"),
+        legend.position = "none") + 
+  labs(x = '', y = "Relative effect of estimates") -> Fig4_aa
+
+library(patchwork)
+(Fig4_aa|Fig4_ab) + plot_layout(widths = c(0.3,0.7))
 
