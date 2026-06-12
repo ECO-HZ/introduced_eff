@@ -62,17 +62,18 @@ emm1_multi <- emm1_multi %>%
     paste0(str_extract(.group, "^([a-zA-Z])"),
            "-",str_extract(.group, "([a-zA-Z])$")),.group))
 
-pot_X2_F_hgt_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "SR2", "Origin2"), measurevar = "X2_F_hgt", na.rm = T)
+#pot_X2_F_hgt_data1 = Rmisc::summarySE(pot_cwm_corr_data, groupvars = c("yr", "SR2", "Origin2"), measurevar = "X2_F_hgt", na.rm = T)
+pot_X2_F_hgt_data1 = emm1_multi
 pot_X2_F_hgt_data1$Group = paste0(pot_X2_F_hgt_data1$Origin2, "|", pot_X2_F_hgt_data1$SR2)
+colnames(pot_X2_F_hgt_data1)[4] <- "X2_F_hgt"
+#pot_X2_F_hgt_data1 = pot_X2_F_hgt_data1 %>% left_join(emm1_multi[,c("yr", "SR2", "Origin2", ".group", "group_new")])
 
-pot_X2_F_hgt_data1 = pot_X2_F_hgt_data1 %>% left_join(emm1_multi[,c("yr", "SR2", "Origin2", ".group", "group_new")])
-
-ggplot(pot_X2_F_hgt_data1, aes(x = yr, y = X2_F_hgt, group = Group, fill = Group, shape = Group)) + 
-  geom_errorbar(aes(ymin = X2_F_hgt-ci, ymax = X2_F_hgt+ci, color = Group), 
+ggplot(pot_X2_F_hgt_data1, aes(x = yr, y = X2_F_hgt, group = Group, color = Group, fill = Group, shape = Group)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax =upper.CL, color = Group), 
                 width = 0, position = position_dodge(width = 0.5), size = 0.8) + 
   geom_line(aes(color = Group), position = position_dodge(width = 0.5), size = 0.8) +
   geom_point(size = 3, position = position_dodge(width = 0.5)) + 
-  geom_text(aes(y = ifelse(X2_F_hgt >= 0, X2_F_hgt + ci, X2_F_hgt + ci),  
+  geom_text(aes(y = ifelse(X2_F_hgt >= 0, upper.CL, upper.CL),  
                 label = group_new, color = Origin), color = "black",
             vjust = ifelse(pot_X2_F_hgt_data1$X2_F_hgt >= 0, -0.5, -0.5), size = 3.875,
             position = position_dodge(width = 0.5)) +  # fontface = "bold"
@@ -175,7 +176,6 @@ ggplot(pot_X2_F_LA_data1, aes(x = yr, y = X2_F_LA, group = Origin2, fill = Origi
   labs(x = "Sampling time (months)", 
        y = "CWM of leaf area\nin the introduced community", 
        tag = "B") -> pp2; pp2
-
 
 ################################################################################
 # X2_F_SLA
@@ -301,6 +301,7 @@ ggplot(pot_X2_F_LDMC_data1, aes(x = yr, y = X2_F_LDMC, group = Origin2, fill = O
   labs(x = "Sampling time (months)", 
        y = "CWM of leaf dry matter content\nin the introduced community", 
        tag = "D") -> pp4; pp4
+
 
 ################################################################################
 # X2_F_germT
@@ -433,6 +434,7 @@ ggplot(pot_X2_F_flowT_data1, aes(x = yr, y = X2_F_flowT, group = Group, fill = G
        y = "CWM of first flowering data\nin the introduced community", 
        tag = "F") -> pp6; pp6
 
+
 # X2_F_seeds
 colnames(pot_cwm_corr_data)
 mod_pot_X2_F_seeds = lmer(X2_F_seeds ~ yr * Origin2 * SR2 + 
@@ -505,7 +507,10 @@ ggplot(pot_X2_F_seeds_data1, aes(x = yr, y = X2_F_seeds, group = Group, fill = G
        y = "CWM of number of seed production\nin the introduced community", 
        tag = "G") -> pp7; pp7
 
+
 (pp1/pp4/pp7)|(pp2/pp5/pp7)|(pp3/pp6/pp7) -> Figure_S6
 
 #ggsave("Figure_S6.pdf", plot = Figure_S6, width = 14.5, height = 11, units = "in", dpi = 300)
 
+
+#ggsave("new_Figure S12.pdf", plot = Figure_S12, width = 14.5, height = 11, units = "in", dpi = 300)
