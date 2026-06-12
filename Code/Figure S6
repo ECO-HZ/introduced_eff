@@ -23,7 +23,7 @@ mytheme = theme_classic() +
         plot.tag = element_text(size = 14, face = "bold"),
         legend.position = "none") 
 
-###### 对于每盆中先加入以及后引入植物总体生物量的影响
+# load data
 pot_cwm_corr_data = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "pot_mass", rowNames = F, colNames = T)
 colnames(pot_cwm_corr_data)
 #pot_cwm_corr_data = pot_cwm_corr_data %>% left_join(pot_infor)
