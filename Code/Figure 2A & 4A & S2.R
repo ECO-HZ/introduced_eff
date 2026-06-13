@@ -16,7 +16,6 @@ library(ggtext)
 persistence_all_data = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "surv_correct", rowNames = F, colNames = T)
 colnames(persistence_all_data)
 
-# 先获取除了cover_mass和Time之外的所有列名
 id_vars <- setdiff(colnames(persistence_all_data), c("pot", "cover_mass", "Time", "species"))
 
 persistence_all_data$Time <- as.character(persistence_all_data$Time)
@@ -33,14 +32,14 @@ persistence_wide$present_y2 = ifelse((persistence_wide$`cover_mass|12` + persist
 persistence_wide$present_y3 = ifelse((persistence_wide$`cover_mass|23` + persistence_wide$`cover_mass|25` + persistence_wide$`cover_mass|29`) > 0, 1, 0)
 persistence_wide$present_y4 = ifelse((persistence_wide$`cover_mass|36` + persistence_wide$`cover_mass|39` + persistence_wide$`cover_mass|40`) > 0, 1, 0)
 
-# 添加群落物种处理信息
+# Add community species treatment information.
 colnames(persistence_all_data)
 pot_infor = unique(persistence_all_data[,c(1:3,19:47)])
 colnames(pot_infor)
 dim(pot_infor)
 #unique(pot_infor$pot)
 
-# 添加物种身份处理信息
+# Add species identity treatment information.
 species_infor = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "traits_mean", rowNames = F, colNames = T)
 species_infor = species_infor[,c("species", "Latin_name", "type")]
 
@@ -72,7 +71,7 @@ persistence_wide_add_long$Time = as.factor(persistence_wide_add_long$Time)
 ################################# Figure S2 ####################################
 ################################################################################
 
-# 对resident species 持续存在概率影响
+# Effects on the persistence probability of resident species
 persistence_wide_R = subset(persistence_wide_add_long, type == "R")
 
 model_all_y_R = glmer(present ~ species * Time + 
@@ -132,7 +131,7 @@ ggplot(data=surv_all_y_eff_R, aes(x = Time, y = prob, group=species, color=speci
 ################################# Figure 2A ####################################
 ################################################################################
 
-# 对adding species 持续存在概率影响
+# Effects on the persistence probability of added species
 persistence_wide_X2 = subset(persistence_wide_add_long, type != "R")
 
 model_all_y_X2 = glmer(present ~ species * Time + 
