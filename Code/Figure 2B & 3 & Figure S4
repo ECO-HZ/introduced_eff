@@ -31,13 +31,13 @@ treatment_list <- c("Origin_num", "BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "A
 effect_effect_data = NULL
 
 for (i in 1:nrow(pot_mass_ck_removed)) {
-  # 获取每一列数据信息(年份、丰富度、群落类型)
+  # Retrieve the information for each column (year, richness, community type)
   sel_pot = pot_mass_ck_removed[i, ]
   
-  # 获取对应对照处理数据
+  # Retrieve the data for the corresponding control treatment
   sel_ck_data = subset(pot_mass_all_data_ck, Time == sel_pot$Time & Res_comm == sel_pot$Res_comm)
   
-  # 计算效应值
+  # Calculate the effect size
   sel_pot$X2_effect = sel_pot$SQRTX2mass 
   sel_pot$R_effect = mean(log(sel_pot$SQRTRmass / sel_ck_data$SQRTRmass), na.rm = TRUE)
   sel_pot$T_effect = mean(log(sel_pot$sqrtmass / sel_ck_data$sqrtmass), na.rm = TRUE)
@@ -158,19 +158,15 @@ for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
   
-  # 构建公式
   formula <- as.formula(paste("X2_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + 
                          (1|res_sp_list)"))
   
-  # 拟合模型
   model <- lmer(formula, data = effect_effect_data, 
                 #family = gaussian(),  
                 control = lmerControl(optimizer = "bobyqa"))
   contrast_formula <- as.formula(paste("pairwise ~", species))
-  
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -180,7 +176,6 @@ for(species in species_list) {
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
   
-  # 存储结果
   SQRTX2mass_sp_eff_dat <- rbind(SQRTX2mass_sp_eff_dat, species_group)
 }
 
@@ -192,7 +187,7 @@ SQRTX2mass_sp_eff_dat$Significance <- case_when(
   #SQRTX2mass_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
+# 
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_X2_effect_mean = NULL
@@ -219,12 +214,12 @@ sp_X2_effect_mean$Group = as.character(sp_X2_effect_mean$Group)
 sp_X2_effect_mean_add = bind_rows(X2_effect_mean_add, sp_X2_effect_mean)
 colnames(sp_X2_effect_mean_add)[2] <- "X2_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
+# 
 higher_X2_effect_data <- sp_X2_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(X2_effect), 
          is_higher = X2_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher) 
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -369,17 +364,14 @@ for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
   
-  # 构建公式
   formula <- as.formula(paste("R_effect ~", species, " + SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)")) #  + (1|add_sp_list) 
   
-  # 拟合模型
   model <- lmer(formula, data = effect_effect_data, 
-                #family = gaussian(),  # 如果是连续变量
+                #family = gaussian(), 
                 control = lmerControl(optimizer = "bobyqa"))
   contrast_formula <- as.formula(paste("pairwise ~", species))
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -389,7 +381,6 @@ for(species in species_list) {
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
   
-  # 存储结果
   SQRTRmass_sp_eff_dat <- rbind(SQRTRmass_sp_eff_dat, species_group)
 }
 
@@ -402,7 +393,6 @@ SQRTRmass_sp_eff_dat$Significance <- case_when(
   #SQRTRmass_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_R_effect_mean = NULL
@@ -427,12 +417,11 @@ sp_R_effect_mean$Group = as.character(sp_R_effect_mean$Group)
 sp_R_effect_mean_add = bind_rows(R_effect_mean_add, sp_R_effect_mean)
 colnames(sp_R_effect_mean_add)[2] <- "R_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_R_effect_data <- sp_R_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(R_effect), 
          is_higher = R_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher)
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -588,7 +577,6 @@ for(species in species_list) {
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -597,8 +585,7 @@ for(species in species_list) {
   species_group$Df = Anova_data$Df[1]
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
-  
-  # 存储结果
+
   sqrtmass_sp_eff_dat <- rbind(sqrtmass_sp_eff_dat, species_group)
 }
 
@@ -610,7 +597,6 @@ sqrtmass_sp_eff_dat$Significance <- case_when(
   #sqrtmass_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_T_effect_mean = NULL
@@ -635,12 +621,11 @@ sp_T_effect_mean$Group = as.character(sp_T_effect_mean$Group)
 sp_T_effect_mean_add = bind_rows(T_effect_mean_add, sp_T_effect_mean)
 colnames(sp_T_effect_mean_add)[2] <- "T_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_T_effect_data <- sp_T_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(T_effect), 
          is_higher = T_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher)  
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -834,19 +819,17 @@ for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
   
-  # 构建公式
   formula <- as.formula(paste("CWM_F_Disease_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
   
-  # 拟合模型
   model <- lmer(formula, data = effect_effect_data_removed, 
-                #family = gaussian(),  # 如果是连续变量
+                #family = gaussian(),  
                 control = lmerControl(optimizer = "bobyqa"))
   
   contrast_formula <- as.formula(paste("pairwise ~", species))
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
+
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -856,7 +839,6 @@ for(species in species_list) {
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
   
-  # 存储结果
   CWM_F_Disease_sp_eff_dat <- rbind(CWM_F_Disease_sp_eff_dat, species_group)
 }
 
@@ -868,7 +850,6 @@ CWM_F_Disease_sp_eff_dat$Significance <- case_when(
   #CWM_F_Disease_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_CWM_F_Disease_effct_mean = NULL
@@ -894,12 +875,11 @@ sp_CWM_F_Disease_effct_mean$Group = as.character(sp_CWM_F_Disease_effct_mean$Gro
 sp_CWM_F_Disease_effct_mean_add = bind_rows(CWM_F_Disease_effct_mean_add, sp_CWM_F_Disease_effct_mean)
 colnames(sp_CWM_F_Disease_effct_mean_add)[2] <- "CWM_F_Disease_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_CWM_F_Disease_effct_data <- sp_CWM_F_Disease_effct_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(CWM_F_Disease_effect), 
          is_higher = CWM_F_Disease_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher)  
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -1046,7 +1026,6 @@ CWM_F_Pest_effect_mean_add = CWM_F_Pest_effect_mean %>%
          Origin = Group,
          x_position = c(1, 2))
 
-# 物种存在、不存在样本内与0的差异
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$CWM_F_Pest_effect, mu = 0)
@@ -1055,7 +1034,7 @@ t.test(subset(effect_effect_data_removed, Origin2 == "Native")$CWM_F_Pest_effect
 CWM_F_Pest_effect_t_test = NULL
 
 for (species in species_list) {
-  # 提取存在组数据
+
   presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "CWM_F_Pest_effect"]
   t_test_presence <- t.test(presence_data, mu = 0)
   CWM_F_Pest_effect_t_test <- rbind(CWM_F_Pest_effect_t_test, data.frame(
@@ -1067,7 +1046,7 @@ for (species in species_list) {
   # absence data
   absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "CWM_F_Pest_effect"]
   t_test_absence <- t.test(absence_data, mu = 0)
-  # 存储结果
+
   CWM_F_Pest_effect_t_test <- rbind(CWM_F_Pest_effect_t_test, data.frame(
     species = species,
     presence = "Absent (0)",
@@ -1089,19 +1068,17 @@ for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
   
-  # 构建公式
   formula <- as.formula(paste("CWM_F_Pest_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
-  
-  # 拟合模型
+
   model <- lmer(formula, data = effect_effect_data_removed, 
-                #family = gaussian(),  # 如果是连续变量
+                #family = gaussian(), 
                 control = lmerControl(optimizer = "bobyqa"))
   
   contrast_formula <- as.formula(paste("pairwise ~", species))
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
+
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -1110,8 +1087,7 @@ for(species in species_list) {
   species_group$Df = Anova_data$Df[1]
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
-  
-  # 存储结果
+
   CWM_F_Pest_sp_eff_dat <- rbind(CWM_F_Pest_sp_eff_dat, species_group)
 }
 
@@ -1123,7 +1099,6 @@ CWM_F_Pest_sp_eff_dat$Significance <- case_when(
   #CWM_F_Pest_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_CWM_F_Pest_effect_mean = NULL
@@ -1149,12 +1124,11 @@ sp_CWM_F_Pest_effect_mean_add = bind_rows(CWM_F_Pest_effect_mean_add, sp_CWM_F_P
 colnames(sp_CWM_F_Pest_effect_mean_add)[2] <- "CWM_F_Pest_effect"
 
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_CWM_F_Pest_effect_data <- sp_CWM_F_Pest_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(CWM_F_Pest_effect), 
          is_higher = CWM_F_Pest_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher)  
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -1252,7 +1226,6 @@ E_BG_effect_mean_add = E_BG_effect_mean %>%
          Origin = Group,
          x_position = c(1, 2))
 
-# 物种存在、不存在样本内与0的差异
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$E_BG_effect, mu = 0)
@@ -1261,7 +1234,7 @@ t.test(subset(effect_effect_data_removed, Origin2 == "Native")$E_BG_effect, mu =
 E_BG_effect_t_test = NULL
 
 for (species in species_list) {
-  # 提取存在组数据
+
   presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "E_BG_effect"]
   t_test_presence <- t.test(presence_data, mu = 0)
   E_BG_effect_t_test <- rbind(E_BG_effect_t_test, data.frame(
@@ -1273,7 +1246,7 @@ for (species in species_list) {
   # absence data
   absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "E_BG_effect"]
   t_test_absence <- t.test(absence_data, mu = 0)
-  # 存储结果
+
   E_BG_effect_t_test <- rbind(E_BG_effect_t_test, data.frame(
     species = species,
     presence = "Absent (0)",
@@ -1295,19 +1268,16 @@ for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
   
-  # 构建公式
   formula <- as.formula(paste("E_BG_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
   
-  # 拟合模型
   model <- lmer(formula, data = effect_effect_data_removed, 
-                #family = gaussian(),  # 如果是连续变量
+                #family = gaussian(), 
                 control = lmerControl(optimizer = "bobyqa"))
   
   contrast_formula <- as.formula(paste("pairwise ~", species))
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -1317,7 +1287,6 @@ for(species in species_list) {
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
   
-  # 存储结果
   E_BG_sp_eff_dat <- rbind(E_BG_sp_eff_dat, species_group)
 }
 
@@ -1329,7 +1298,6 @@ E_BG_sp_eff_dat$Significance <- case_when(
   #E_BG_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_E_BG_effect_mean = NULL
@@ -1354,12 +1322,11 @@ sp_E_BG_effect_mean$Group = as.character(sp_E_BG_effect_mean$Group)
 sp_E_BG_effect_mean_add = bind_rows(E_BG_effect_mean_add, sp_E_BG_effect_mean)
 colnames(sp_E_BG_effect_mean_add)[2] <- "E_BG_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_E_BG_effect_data <- sp_E_BG_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(E_BG_effect), 
          is_higher = E_BG_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher)  
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -1400,8 +1367,6 @@ ggplot(sp_E_BG_effect_mean_add, aes(x = x_position, y = E_BG_effect, fill = Orig
   labs(x = "Introduced species (or group)", 
        y = "Effects on soil\nß 1,4 glucosidase activity",
        tag = "E") -> Figure_3E; Figure_3E
-
-
 
 ################################################################################
 ########### Effects on soil ß−1,4−N−acetylglucosaminidase activity #############
@@ -1461,7 +1426,6 @@ E_NAG_effect_mean_add = E_NAG_effect_mean %>%
          Origin = Group,
          x_position = c(1, 2))
 
-# 物种存在、不存在样本内与0的差异
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$E_NAG_effect, mu = 0)
@@ -1470,7 +1434,7 @@ t.test(subset(effect_effect_data_removed, Origin2 == "Native")$E_NAG_effect, mu 
 E_NAG_effect_t_test = NULL
 
 for (species in species_list) {
-  # 提取存在组数据
+
   presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "E_NAG_effect"]
   t_test_presence <- t.test(presence_data, mu = 0)
   E_NAG_effect_t_test <- rbind(E_NAG_effect_t_test, data.frame(
@@ -1482,7 +1446,7 @@ for (species in species_list) {
   # absence data
   absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "E_NAG_effect"]
   t_test_absence <- t.test(absence_data, mu = 0)
-  # 存储结果
+
   E_NAG_effect_t_test <- rbind(E_NAG_effect_t_test, data.frame(
     species = species,
     presence = "Absent (0)",
@@ -1504,19 +1468,17 @@ for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
   
-  # 构建公式
   formula <- as.formula(paste("E_NAG_effect ~", species, "+ SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
   
-  # 拟合模型
   model <- lmer(formula, data = effect_effect_data_removed, 
-                #family = gaussian(),  # 如果是连续变量
+                #family = gaussian(), 
                 control = lmerControl(optimizer = "bobyqa"))
   
   contrast_formula <- as.formula(paste("pairwise ~", species))
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
+
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -1526,7 +1488,6 @@ for(species in species_list) {
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
   
-  # 存储结果
   E_NAG_sp_eff_dat <- rbind(E_NAG_sp_eff_dat, species_group)
 }
 
@@ -1538,7 +1499,6 @@ E_NAG_sp_eff_dat$Significance <- case_when(
   #E_NAG_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_E_NAG_effect_mean = NULL
@@ -1563,12 +1523,11 @@ sp_E_NAG_effect_mean$Group = as.character(sp_E_NAG_effect_mean$Group)
 sp_E_NAG_effect_mean_add = bind_rows(E_NAG_effect_mean_add, sp_E_NAG_effect_mean)
 colnames(sp_E_NAG_effect_mean_add)[2] <- "E_NAG_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_E_NAG_effect_data <- sp_E_NAG_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(E_NAG_effect), 
          is_higher = E_NAG_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher) 
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -1609,7 +1568,6 @@ ggplot(sp_E_NAG_effect_mean_add, aes(x = x_position, y = E_NAG_effect, fill = Or
   labs(x = "Introduced species (or group)", 
        y = "Effects on soil\nß 1,4 N acetylglucosaminidase activity",
        tag = "F") -> Figure_3F; Figure_3F
-
 
 
 ################################################################################
@@ -1668,7 +1626,6 @@ E_AP_effect_mean_add = E_AP_effect_mean %>%
          Origin = Group,
          x_position = c(1, 2))
 
-# 物种存在、不存在样本内与0的差异
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$E_AP_effect, mu = 0)
@@ -1677,7 +1634,7 @@ t.test(subset(effect_effect_data_removed, Origin2 == "Native")$E_AP_effect, mu =
 E_AP_effect_t_test = NULL
 
 for (species in species_list) {
-  # 提取存在组数据
+
   presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "E_AP_effect"]
   t_test_presence <- t.test(presence_data, mu = 0)
   E_AP_effect_t_test <- rbind(E_AP_effect_t_test, data.frame(
@@ -1689,7 +1646,7 @@ for (species in species_list) {
   # absence data
   absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "E_AP_effect"]
   t_test_absence <- t.test(absence_data, mu = 0)
-  # 存储结果
+
   E_AP_effect_t_test <- rbind(E_AP_effect_t_test, data.frame(
     species = species,
     presence = "Absent (0)",
@@ -1710,20 +1667,18 @@ E_AP_sp_eff_dat <- data.frame()
 for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
-  
-  # 构建公式
+
   formula <- as.formula(paste("E_AP_effect ~", species, " + SR2 + (1|Time) + (1|Origin2:SR2:pot) + (1|res_sp_list)"))
-  
-  # 拟合模型
+
   model <- lmer(formula, data = effect_effect_data_removed, 
-                #family = gaussian(),  # 如果是连续变量
+                #family = gaussian(),
                 control = lmerControl(optimizer = "bobyqa"))
   
   contrast_formula <- as.formula(paste("pairwise ~", species))
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
+
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -1732,8 +1687,7 @@ for(species in species_list) {
   species_group$Df = Anova_data$Df[1]
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
-  
-  # 存储结果
+
   E_AP_sp_eff_dat <- rbind(E_AP_sp_eff_dat, species_group)
 }
 
@@ -1746,7 +1700,6 @@ E_AP_sp_eff_dat$Significance <- case_when(
   #E_AP_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_E_AP_effect_mean = NULL
@@ -1771,12 +1724,11 @@ sp_E_AP_effect_mean$Group = as.character(sp_E_AP_effect_mean$Group)
 sp_E_AP_effect_mean_add = bind_rows(E_AP_effect_mean_add, sp_E_AP_effect_mean)
 colnames(sp_E_AP_effect_mean_add)[2] <- "E_AP_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_E_AP_effect_data <- sp_E_AP_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(E_AP_effect), 
          is_higher = E_AP_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher) 
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -1817,8 +1769,6 @@ ggplot(sp_E_AP_effect_mean_add, aes(x = x_position, y = E_AP_effect, fill = Orig
   labs(x = "Introduced species (or group)", 
        y = "Effects on soil\nacid phosphatase activity",
        tag = "G") -> Figure_3G; Figure_3G
-
-
 
 ################################################################################
 ########### Effects on soil total nitrogen content #############
@@ -1874,7 +1824,6 @@ soilN_effect_mean_add = soilN_effect_mean %>%
          Origin = Group,
          x_position = c(1, 2))
 
-# 物种存在、不存在样本内与0的差异
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 t.test(subset(effect_effect_data_removed, Origin2 == "Alien")$soilN_effect, mu = 0)
@@ -1883,7 +1832,7 @@ t.test(subset(effect_effect_data_removed, Origin2 == "Native")$soilN_effect, mu 
 soilN_effect_t_test = NULL
 
 for (species in species_list) {
-  # 提取存在组数据
+
   presence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "1", "soilN_effect"]
   t_test_presence <- t.test(presence_data, mu = 0)
   soilN_effect_t_test <- rbind(soilN_effect_t_test, data.frame(
@@ -1895,7 +1844,7 @@ for (species in species_list) {
   # absence data
   absence_data <- effect_effect_data_removed[effect_effect_data_removed[[species]] == "0", "soilN_effect"]
   t_test_absence <- t.test(absence_data, mu = 0)
-  # 存储结果
+
   soilN_effect_t_test <- rbind(soilN_effect_t_test, data.frame(
     species = species,
     presence = "Absent (0)",
@@ -1916,21 +1865,18 @@ soilN_sp_eff_dat <- data.frame()
 for(species in species_list) {
   
   cat("Currently analyzing species:", species, "\n") 
-  
-  # 构建公式
+
   formula <- as.formula(paste("soilN_effect ~", species, " + SR2 + (1|res_sp_list)"))
-  
-  # 拟合模型
+
   model <- lmer(formula, data = effect_effect_data_removed, 
-                #family = gaussian(),  # 如果是连续变量
+                #family = gaussian(), 
                 control = lmerControl(optimizer = "bobyqa"))
   
   contrast_formula <- as.formula(paste("pairwise ~", species))
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  
-  # 提取系数
+
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -1939,8 +1885,7 @@ for(species in species_list) {
   species_group$Df = Anova_data$Df[1]
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
-  
-  # 存储结果
+
   soilN_sp_eff_dat <- rbind(soilN_sp_eff_dat, species_group)
 }
 
@@ -1953,7 +1898,6 @@ soilN_sp_eff_dat$Significance <- case_when(
   #soilN_eff_dat_all$chisq_p < 0.1   ~ "†",  
   TRUE ~ "")
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_soilN_effect_mean = NULL
@@ -1978,12 +1922,11 @@ sp_soilN_effect_mean$Group = as.character(sp_soilN_effect_mean$Group)
 sp_soilN_effect_mean_add = bind_rows(soilN_effect_mean_add, sp_soilN_effect_mean)
 colnames(sp_soilN_effect_mean_add)[2] <- "soilN_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_soilN_effect_data <- sp_soilN_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(soilN_effect), 
          is_higher = soilN_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher)
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
@@ -2050,21 +1993,17 @@ car::Anova(mod_pot_Linsitu)
 summary(mod_pot_Linsitu)
 ranova(mod_pot_Linsitu)
 
-# 获取对照处理各年份、各群落类型下均值
 pot_mass_ck_data = subset(pot_mass_Linsitu, Origin2 == "ck")
 
 effect_Linsitu_data = NULL
 
 for (ii in 1:nrow(pot_mass_ck_removed)) {
   sel_pot = pot_mass_ck_removed[ii, ]
-  
-  # 获取选取的样方信息
+
   sel_Time = sel_pot$Time; sel_Pcom = sel_pot$Res_comm
-  
-  # 获取对应对照处理数据
+
   sel_ck_data = subset(pot_mass_ck_data, Time == sel_Time & Res_comm == sel_Pcom)
-  
-  # 计算效应值
+
   sel_pot$Linsitu_effect = mean(log(sel_pot$Mloss / sel_ck_data$Mloss), na.rm = TRUE)
   
   effect_Linsitu_data = rbind(effect_Linsitu_data, sel_pot)
@@ -2091,7 +2030,6 @@ Linsitu_effect_mean_add = Linsitu_effect_mean %>%
          Origin = Group,
          x_position = c(1, 2))
 
-# 物种存在、不存在样本内与0的差异
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 t.test(subset(effect_Linsitu_data, Origin2 == "Alien")$Linsitu_effect, mu = 0)
@@ -2100,7 +2038,7 @@ t.test(subset(effect_Linsitu_data, Origin2 == "Native")$Linsitu_effect, mu = 0)
 effect_Linsitu_t_test = NULL
 
 for (species in species_list) {
-  # 提取存在组数据
+
   presence_data <- effect_Linsitu_data[effect_Linsitu_data[[species]] == "1", "Linsitu_effect"]
   t_test_presence <- t.test(presence_data, mu = 0)
   effect_Linsitu_t_test <- rbind(effect_Linsitu_t_test, data.frame(
@@ -2112,7 +2050,7 @@ for (species in species_list) {
   # absence data
   absence_data <- effect_Linsitu_data[effect_Linsitu_data[[species]] == "0", "Linsitu_effect"]
   t_test_absence <- t.test(absence_data, mu = 0)
-  # 存储结果
+
   effect_Linsitu_t_test <- rbind(effect_Linsitu_t_test, data.frame(
     species = species,
     presence = "Absent (0)",
@@ -2151,7 +2089,7 @@ for(species in species_list) {
   
   species_emmeans = emmeans(model, specs = contrast_formula, type = "response")
   print(species_emmeans$contrasts)
-  # 提取系数
+
   Anova_data = as.data.frame(car::Anova(model))
   
   species_group = as.tibble(species_emmeans$emmeans)
@@ -2161,7 +2099,6 @@ for(species in species_list) {
   species_group$chisq_p = Anova_data$`Pr(>Chisq)`[1]
   colnames(species_group)[1] <- "Group"
   
-  # 存储结果
   Linsitu_effect_sp_eff_dat <- rbind(Linsitu_effect_sp_eff_dat, species_group)
 }
 
@@ -2175,7 +2112,6 @@ Linsitu_effect_sp_eff_dat$Significance <- case_when(
 
 print(Linsitu_effect_sp_eff_dat)
 
-# 计算各物种存在与不存在样方的均值及其95%CI
 species_list <- c("BF", "BB", "PA", "SN", "SOC", "ST", "CAR", "AA", "DA", "CAL")
 
 sp_Linsitu_effect_mean = NULL
@@ -2200,12 +2136,11 @@ sp_Linsitu_effect_mean$Group = as.character(sp_Linsitu_effect_mean$Group)
 sp_Linsitu_effect_mean_add = bind_rows(Linsitu_effect_mean_add, sp_Linsitu_effect_mean)
 colnames(sp_Linsitu_effect_mean_add)[2] <- "Linsitu_effect"
 
-# 找出每个物种内部Presence和Absence哪个值更高
 higher_Linsitu_effect_data <- sp_Linsitu_effect_mean_add %>%
   group_by(species) %>%
   mutate(max_X2 = max(Linsitu_effect), 
          is_higher = Linsitu_effect == max_X2) %>%
-  filter(Significance != "" & is_higher)  # 只保留有显著性且是最大值的行
+  filter(Significance != "" & is_higher) 
 
 labels_infor = c("1" = "Alien", "2" = "Native", "3.5" = "BF", "4.5" = "BB", "6" = "PA", "7" = "SN",
                  "8.5" = "SOC", "9.5" = "ST", "11" = "CAR", "12" = "AA", "13.5" = "DA", "14.5" = "CAL")
