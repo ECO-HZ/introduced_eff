@@ -8,7 +8,7 @@ library(glmmTMB)
 library(tibble)
 library(dplyr)
 
-###### 对于每盆中先加入以及后引入植物总体生物量的影响
+# load data
 pot_cwm_corr_data = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "pot_mass", rowNames = F, colNames = T)
 colnames(pot_cwm_corr_data)
 pot_cwm_corr_data$yr = as.character(pot_cwm_corr_data$Time)
@@ -284,7 +284,6 @@ Linsitu_final <- lmer(Mloss ~ X2_F_flowT + X2_F_seeds +
 vif(Linsitu_final)
 MuMIn::r.squaredGLMM(Linsitu_final)
 
-###### 对于每盆引入、基底、整体群落生物量、病虫害水平影响
 pot_cwm_corr_data = read.xlsx("field experiment cover biomass survival 260409.xlsx", sheet = "pot_mass", rowNames = F, colNames = T)
 colnames(pot_cwm_corr_data)
 pot_cwm_corr_data$SQRTMass = sqrt(pot_cwm_corr_data$mass)
@@ -591,18 +590,12 @@ plot_data <- read.xlsx("Figure_4c_model_select.xlsx", sheet = "delta<4", colName
 
 library(tidyverse)
 
-# 定义标准预测变量
 standard_predictors <- c("X2_F_LA", "X2_F_hgt", "X2_F_LDMC", "X2_F_germT", "X2_F_flowT", "X2_F_seeds")
 
-# 按响应变量和预测变量重塑数据
 df_standard <- plot_data %>%
-  # 筛选出有 Estimate 的行（即非截距行，或根据需要调整）
   filter(Predictors %in% standard_predictors | Predictors == "(Intercept)") %>%
-  # 为每个响应变量创建完整的预测变量组合
   complete(Responses, Predictors = c("(Intercept)", standard_predictors)) %>%
-  # 按原始顺序排列
   arrange(Responses, match(Predictors, c("(Intercept)", standard_predictors))) %>%
-  # 可选：重新组织列的顺序
   select(Responses, Predictors, Estimate, Std..Error, z.value, `Pr(>|z|)`, everything())
 
 
